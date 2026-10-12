@@ -1,0 +1,6 @@
+{
+  "name": "Controle de Hora Extra (HE)",
+  "description": "Aplicativo PWA moderno para controle, cálculo, calendário mensal e relatórios em PDF de horas extras.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
