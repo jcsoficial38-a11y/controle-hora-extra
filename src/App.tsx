@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { OvertimeRecord, OvertimeStatus, ManagerProfile, AppTheme } from './types/overtime';
-import { loadRecords, saveRecords, loadManagerProfile, saveManagerProfile } from './utils/storage';
+import { loadRecords, saveRecords, loadManagerProfile, saveManagerProfile, initDurableStorage } from './utils/storage';
 import { SplashScreen } from './components/SplashScreen';
 import { Header, ActiveTab } from './components/Header';
 import { OvertimeList } from './components/OvertimeList';
@@ -31,6 +31,38 @@ export default function App() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isDataModalOpen, setIsDataModalOpen] = useState(false);
 
+  // Inicialização do Armazenamento Durável e Proteção Persistente contra perda de dados
+  useEffect(() => {
+    initDurableStorage(
+      (hydratedRecords) => {
+        setRecords(hydratedRecords);
+      },
+      (hydratedProfile) => {
+        setProfile(hydratedProfile);
+      }
+    );
+
+    // Escuta eventos de storage entre abas para manter tudo sincronizado sem sobrescrita
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'controle_hora_extra_records_v1' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) {
+            setRecords(parsed);
+          }
+        } catch {}
+      } else if (e.key === 'controle_hora_extra_manager_profile_v1' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          setProfile(prev => ({ ...prev, ...parsed }));
+        } catch {}
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   // Synchronize dark theme class on document element
   useEffect(() => {
     if (profile.theme === 'dark') {
@@ -40,12 +72,12 @@ export default function App() {
     }
   }, [profile.theme]);
 
-  // Synchronize records changes to localStorage
+  // Synchronize records changes to durable storage
   useEffect(() => {
     saveRecords(records);
   }, [records]);
 
-  // Synchronize profile changes to localStorage
+  // Synchronize profile changes to durable storage
   useEffect(() => {
     saveManagerProfile(profile);
   }, [profile]);

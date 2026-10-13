@@ -1,7 +1,24 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { OvertimeRecord } from '../types/overtime';
-import { getInitialSeedData } from '../utils/storage';
-import { X, Download, Upload, RotateCcw, AlertTriangle, CheckCircle2, Database } from 'lucide-react';
+import {
+   getInitialSeedData,
+   getBackupVaultInfo,
+   restoreFromBackupVault,
+   createSafetyPreResetBackup,
+   restorePreResetBackup,
+ } from '../utils/storage';
+import {
+   X,
+   Download,
+   Upload,
+   RotateCcw,
+   AlertTriangle,
+   CheckCircle2,
+   Database,
+   ShieldCheck,
+   ArchiveRestore,
+   Layers,
+ } from 'lucide-react';
 
 interface DataManagementModalProps {
   isOpen: boolean;
@@ -21,6 +38,18 @@ export const DataManagementModal: React.FC<DataManagementModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [vaultInfo, setVaultInfo] = useState<{
+    hasBackup: boolean;
+    date?: string;
+    count?: number;
+    hasPreResetBackup: boolean;
+  }>({ hasBackup: false, hasPreResetBackup: false });
+
+  useEffect(() => {
+    if (isOpen) {
+      setVaultInfo(getBackupVaultInfo());
+    }
+  }, [isOpen, records.length]);
 
   if (!isOpen) return null;
 
@@ -51,19 +80,53 @@ export const DataManagementModal: React.FC<DataManagementModalProps> = ({
         } else {
           setErrorMessage('O arquivo JSON deve conter uma lista válida de lançamentos.');
         }
-      } catch (err) {
+      } catch {
         setErrorMessage('Falha ao processar o arquivo JSON.');
       }
     };
     reader.readAsText(file);
   };
 
-  const handleReset = () => {
-    if (confirm('Tem certeza que deseja restaurar os dados de exemplo padrão? Os registros atuais serão substituídos.')) {
+  const handleResetWithSafetyBackup = () => {
+    if (
+      confirm(
+        'Atenção: Deseja realmente carregar os dados de demonstração? Uma cópia de segurança dos seus registros atuais será salva automaticamente antes da alteração.'
+      )
+    ) {
+      // 1. Cria cópia de segurança antes do reset para garantir que nada seja perdido
+      createSafetyPreResetBackup(records);
+
+      // 2. Carrega os dados de exemplo
       const initial = getInitialSeedData();
       onResetRecords(initial);
-      setSuccessMessage('Dados restaurados com sucesso!');
-      setTimeout(() => setSuccessMessage(''), 3000);
+
+      setVaultInfo(getBackupVaultInfo());
+      setSuccessMessage('Dados de exemplo carregados! Sua cópia de segurança foi salva no cofre.');
+      setTimeout(() => setSuccessMessage(''), 4000);
+    }
+  };
+
+  const handleRestorePreReset = () => {
+    const recovered = restorePreResetBackup();
+    if (recovered) {
+      onImportRecords(recovered);
+      setVaultInfo(getBackupVaultInfo());
+      setSuccessMessage(`${recovered.length} registros anteriores recuperados com sucesso!`);
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } else {
+      setErrorMessage('Não foi possível encontrar a cópia anterior.');
+    }
+  };
+
+  const handleRestoreVault = () => {
+    const recovered = restoreFromBackupVault();
+    if (recovered && recovered.length > 0) {
+      onImportRecords(recovered);
+      setVaultInfo(getBackupVaultInfo());
+      setSuccessMessage(`${recovered.length} registros recuperados do cofre de backup!`);
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } else {
+      setErrorMessage('Nenhum backup encontrado no cofre.');
     }
   };
 
@@ -72,37 +135,59 @@ export const DataManagementModal: React.FC<DataManagementModalProps> = ({
       <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         
         {/* Header */}
-        <div className="px-6 py-4 bg-slate-800 text-white flex items-center justify-between">
+        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Database className="w-5 h-5 text-blue-400" />
-            <h3 className="font-bold text-base">Banco de Dados & Backup</h3>
+            <h3 className="font-bold text-base">Banco de Dados & Armazenamento</h3>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-white">
+          <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
           {successMessage && (
             <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs font-semibold flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>{successMessage}</span>
             </div>
           )}
 
           {errorMessage && (
             <div className="p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 text-xs font-semibold flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-rose-600" />
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
               <span>{errorMessage}</span>
             </div>
           )}
 
-          <div className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-            Seus dados são salvos com segurança diretamente no armazenamento local do seu navegador (LocalStorage). Você pode exportar um backup para salvar ou transferir para outro celular/computador.
+          {/* Cartão de Integridade e Armazenamento Durável */}
+          <div className="p-4 rounded-2xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-800/60">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-blue-600 text-white shrink-0 mt-0.5">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-black text-blue-950 dark:text-blue-200">
+                    Armazenamento Durável Ativo
+                  </h4>
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                    Permanente
+                  </span>
+                </div>
+                <p className="text-[11px] text-blue-900/80 dark:text-blue-300/80 mt-1 leading-relaxed">
+                  Seus <strong>{records.length} lançamentos</strong> e configurações estão protegidos em múltiplas camadas (IndexedDB + LocalStorage protegido + Cofre de Backup). Reiniciar o celular ou atualizar a página não apaga suas informações.
+                </p>
+                <div className="mt-2 flex items-center gap-2 text-[10px] text-blue-700 dark:text-blue-400 font-semibold">
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Proteção contra perda de dados e resets acidentais ativada</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-2.5 pt-2">
+          <div className="space-y-2.5 pt-1">
             {/* Exportar Backup */}
             <button
               type="button"
@@ -114,8 +199,8 @@ export const DataManagementModal: React.FC<DataManagementModalProps> = ({
                   <Download className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="font-bold text-slate-800 dark:text-white text-xs">Exportar Backup (JSON)</div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">Salvar cópia de todos os {records.length} lançamentos</div>
+                  <div className="font-bold text-slate-800 dark:text-white text-xs">Exportar Arquivo de Backup (JSON)</div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">Baixar arquivo de segurança de todos os registros</div>
                 </div>
               </div>
             </button>
@@ -131,8 +216,8 @@ export const DataManagementModal: React.FC<DataManagementModalProps> = ({
                   <Upload className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="font-bold text-slate-800 dark:text-white text-xs">Importar Backup (JSON)</div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">Carregar arquivo salvo anteriormente</div>
+                  <div className="font-bold text-slate-800 dark:text-white text-xs">Importar Arquivo de Backup (JSON)</div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">Restaurar registros a partir de um arquivo salvo</div>
                 </div>
               </div>
             </button>
@@ -144,10 +229,50 @@ export const DataManagementModal: React.FC<DataManagementModalProps> = ({
               className="hidden"
             />
 
-            {/* Restaurar Padrão */}
+            {/* Desfazer Restauração / Recuperar Dados Anteriores se houver snapshot de segurança */}
+            {vaultInfo.hasPreResetBackup && (
+              <button
+                type="button"
+                onClick={handleRestorePreReset}
+                className="w-full flex items-center justify-between p-3.5 rounded-2xl border border-amber-200 dark:border-amber-800/80 bg-amber-50/60 dark:bg-amber-950/20 hover:bg-amber-100/60 transition cursor-pointer text-left text-amber-900 dark:text-amber-300"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200">
+                    <ArchiveRestore className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs">Restaurar Meus Dados Salvos Pré-Reset</div>
+                    <div className="text-[11px] text-amber-700/80 dark:text-amber-400">Recuperar dados preservados pelo cofre</div>
+                  </div>
+                </div>
+              </button>
+            )}
+
+            {/* Restaurar do Cofre de Backup Automático se a lista atual for menor ou vazia */}
+            {vaultInfo.hasBackup && records.length === 0 && (
+              <button
+                type="button"
+                onClick={handleRestoreVault}
+                className="w-full flex items-center justify-between p-3.5 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/60 dark:bg-indigo-950/20 hover:bg-indigo-100/60 transition cursor-pointer text-left text-indigo-900 dark:text-indigo-300"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-800 dark:text-indigo-200">
+                    <Database className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs">Recuperar do Cofre de Backup Automático</div>
+                    <div className="text-[11px] text-indigo-700/80 dark:text-indigo-400">
+                      Restaurar {vaultInfo.count || 0} registros do cofre local
+                    </div>
+                  </div>
+                </div>
+              </button>
+            )}
+
+            {/* Restaurar Padrão com Aviso de Segurança */}
             <button
               type="button"
-              onClick={handleReset}
+              onClick={handleResetWithSafetyBackup}
               className="w-full flex items-center justify-between p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition cursor-pointer text-left text-rose-700 dark:text-rose-400"
             >
               <div className="flex items-center gap-3">
@@ -155,8 +280,10 @@ export const DataManagementModal: React.FC<DataManagementModalProps> = ({
                   <RotateCcw className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="font-bold text-xs">Restaurar Dados Padrão</div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">Recarregar exemplos de demonstração</div>
+                  <div className="font-bold text-xs">Carregar Dados de Demonstração</div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Salva cópia de segurança automática antes de carregar
+                  </div>
                 </div>
               </div>
             </button>
