@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { ManagerProfile, AppTheme, AppColorTheme } from '../types/overtime';
 import { COLOR_THEMES } from '../utils/theme';
+import { registerNativeBiometrics } from '../utils/biometrics';
 import { 
   User, 
   Mail, 
@@ -43,6 +44,7 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
   // Estados para fluxo de cadastro/ativação de biometria
   const [showEnrollmentModal, setShowEnrollmentModal] = useState<boolean>(false);
   const [enrollmentStatus, setEnrollmentStatus] = useState<'idle' | 'scanning' | 'success'>('idle');
+  const [enrollmentError, setEnrollmentError] = useState<string>('');
 
   const activeThemeConfig = COLOR_THEMES[formData.primaryColor] || COLOR_THEMES.blue;
 
@@ -50,53 +52,46 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
   const handleStartEnrollment = () => {
     setShowEnrollmentModal(true);
     setEnrollmentStatus('idle');
+    setEnrollmentError('');
   };
 
-  // Confirmar leitura e cadastrar biometria no aparelho
+  // Confirmar leitura e cadastrar biometria no aparelho usando API Nativa
   const handleConfirmEnrollment = async () => {
     setEnrollmentStatus('scanning');
+    setEnrollmentError('');
     try {
-      if (window.PublicKeyCredential && (await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.())) {
+      const result = await registerNativeBiometrics(formData.name);
+      if (result.success) {
+        setEnrollmentStatus('success');
+        const updated: ManagerProfile = {
+          ...formData,
+          biometricsEnabled: true,
+          biometricsRegisteredAt: new Date().toLocaleDateString('pt-BR'),
+          biometricCredentialId: result.credentialId || formData.biometricCredentialId,
+        };
+        setFormData(updated);
+        onUpdateProfile(updated);
         setTimeout(() => {
-          setEnrollmentStatus('success');
-          const updated = {
-            ...formData,
-            biometricsEnabled: true,
-            biometricsRegisteredAt: new Date().toLocaleDateString('pt-BR'),
-          };
-          setFormData(updated);
-          onUpdateProfile(updated);
-          setTimeout(() => {
-            setShowEnrollmentModal(false);
-            setEnrollmentStatus('idle');
-          }, 800);
-        }, 1100);
+          setShowEnrollmentModal(false);
+          setEnrollmentStatus('idle');
+          setEnrollmentError('');
+        }, 1200);
       } else {
-        setTimeout(() => {
-          setEnrollmentStatus('success');
-          const updated = {
-            ...formData,
-            biometricsEnabled: true,
-            biometricsRegisteredAt: new Date().toLocaleDateString('pt-BR'),
-          };
-          setFormData(updated);
-          onUpdateProfile(updated);
-          setTimeout(() => {
-            setShowEnrollmentModal(false);
-            setEnrollmentStatus('idle');
-          }, 800);
-        }, 1100);
+        setEnrollmentStatus('idle');
+        setEnrollmentError(result.error || 'Falha ao autorizar leitura biométrica.');
       }
-    } catch {
+    } catch (err: any) {
       setEnrollmentStatus('idle');
+      setEnrollmentError(err?.message || 'Erro inesperado ao acessar o sensor.');
     }
   };
 
   // Desativar biometria (volta ao padrão desativado)
   const handleDeactivateBiometrics = () => {
-    const updated = {
+    const updated: ManagerProfile = {
       ...formData,
       biometricsEnabled: false,
+      biometricCredentialId: undefined,
     };
     setFormData(updated);
     onUpdateProfile(updated);
@@ -633,11 +628,11 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
                   {enrollmentStatus === 'scanning' && 'Registrando sensor biométrico...'}
                   {enrollmentStatus === 'success' && 'Biometria cadastrada e ativada!'}
                 </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
-                  {enrollmentStatus === 'idle' && 'Toque no botão abaixo para autorizar e cadastrar a biometria no seu dispositivo.'}
-                  {enrollmentStatus === 'scanning' && 'Aguardando validação do sensor biométrico...'}
-                  {enrollmentStatus === 'success' && 'A partir de agora você poderá utilizar sua biometria para entrar no aplicativo.'}
-                </p>
+                {enrollmentError && (
+                  <div className="mt-3 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-xs font-semibold text-rose-600 dark:text-rose-400">
+                    {enrollmentError}
+                  </div>
+                )}
               </div>
             </div>
 
