@@ -76,35 +76,34 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
 
   // FLUXO ESTRITO DE SEGURANÇA DA BIOMETRIA
   // 1. O clique no botão NÃO PODE abrir o app diretamente sob nenhuma hipótese.
-  // 2. Primeiro verifica se a biometria está ativada/cadastrada nas configurações.
-  // 3. Se NÃO estiver ativada: exibe o aviso obrigatório e PERMANECE na tela de bloqueio.
-  // 4. Se ESTIVER ativada: aciona obrigatoriamente a API nativa de biometria do dispositivo (Android/iOS).
+  // 2. Primeiro verifica se a biometria foi previamente cadastrada e ativada nas configurações.
+  // 3. Se NÃO estiver cadastrada/ativada: exibe "Cadastre a biometria nas configurações do app primeiro" e NÃO aciona a criação na tela de bloqueio.
+  // 4. Se ESTIVER cadastrada: aciona APENAS a autenticação/verificação da chave já salva (get passkey / WebAuthn get). NUNCA cria passkey aqui!
   // 5. O app SÓ é liberado se a leitura da digital for confirmada com SUCESSO.
   const handleBiometricsClick = () => {
-    // Regra 2 e 3: Verificar ativação nas configurações do app
-    if (!profile.biometricsEnabled) {
-      const msg = 'Biometria não cadastrada. Acesse com seu PIN e ative nas configurações do app.';
+    const isRegistered = Boolean(profile.biometricsEnabled && profile.biometricCredentialId);
+
+    // Regra 3: Se o usuário ainda não tiver cadastrado a biometria previamente nas configurações:
+    if (!isRegistered) {
+      const msg = 'Cadastre a biometria nas configurações do app primeiro';
       setErrorMsg(msg);
       setShowDisabledBiometricsAlert(true);
       return;
     }
 
-    // Regra 4: Se ativada, aciona a janela do leitor nativo
+    // Regra 4: Se cadastrada, aciona APENAS a autenticação da chave salva (get passkey)
     setErrorMsg('');
     setShowBiometricsModal(true);
     handlePerformBiometricScan();
   };
 
-  // Aciona obrigatoriamente a API nativa de biometria do dispositivo (WebAuthn / Android BiometricPrompt / iOS Face ID)
+  // Aciona obrigatoriamente a autenticação nativa da chave já existente (navigator.credentials.get)
   const handlePerformBiometricScan = async () => {
     setBiometricsStatus('scanning');
     setBiometricErrorDetails('');
 
     try {
-      const result = await verifyNativeBiometrics(
-        profile.biometricCredentialId,
-        profile.name
-      );
+      const result = await verifyNativeBiometrics(profile.biometricCredentialId);
 
       // Regra 5: SÓ libera se a leitura for confirmada com SUCESSO
       if (result.success) {
@@ -115,8 +114,6 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
           setBiometricErrorDetails('');
           onSuccess();
         }, 500);
-      } else {
-        // Falhou ou cancelada pelo usuário na tela do sistema: MANTÉM BLOQUEADO!
         setBiometricsStatus('error');
         setBiometricErrorDetails(
           result.error || 'Leitura cancelada ou não reconhecida pelo leitor biométrico.'
@@ -282,15 +279,15 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
               <h4 className="text-base font-black text-slate-900 dark:text-white">
                 Biometria não cadastrada
               </h4>
-              <p className="text-xs text-slate-700 dark:text-slate-200 mt-2 font-medium leading-relaxed bg-amber-50/80 dark:bg-amber-950/40 p-3 rounded-2xl border border-amber-200/80 dark:border-amber-900/60">
-                Biometria não cadastrada. Acesse com seu PIN e ative nas configurações do app.
+              <p className="text-xs text-slate-700 dark:text-slate-200 mt-2 font-bold leading-relaxed bg-amber-50/80 dark:bg-amber-950/40 p-3 rounded-2xl border border-amber-200/80 dark:border-amber-900/60">
+                Cadastre a biometria nas configurações do app primeiro
               </p>
             </div>
 
             <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-500 dark:text-slate-400 text-left flex items-start gap-2.5">
               <Fingerprint className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
               <span>
-                Por regra de segurança, a biometria vem desativada por padrão. Digite seu <strong>PIN de 4 dígitos</strong> para entrar e vá até as <strong>Configurações (Perfil do Gestor)</strong> para cadastrar sua digital.
+                Acesse o aplicativo utilizando o seu <strong>PIN de 4 dígitos</strong> e realize o cadastro único da biometria no <strong>Perfil do Gestor (Configurações)</strong>.
               </span>
             </div>
 

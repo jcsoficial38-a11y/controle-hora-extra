@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { ManagerProfile, AppTheme, AppColorTheme } from '../types/overtime';
 import { COLOR_THEMES } from '../utils/theme';
-import { registerNativeBiometrics } from '../utils/biometrics';
+import { registerNativeBiometrics, verifyNativeBiometrics } from '../utils/biometrics';
 import { 
   User, 
   Mail, 
@@ -24,7 +24,8 @@ import {
   Scan,
   CheckCircle2,
   X,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 
 interface ManagerProfileViewProps {
@@ -46,16 +47,20 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
   const [enrollmentStatus, setEnrollmentStatus] = useState<'idle' | 'scanning' | 'success'>('idle');
   const [enrollmentError, setEnrollmentError] = useState<string>('');
 
+  // Estados para teste de autenticação biométrica dentro do app
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMsg, setTestMsg] = useState<string>('');
+
   const activeThemeConfig = COLOR_THEMES[formData.primaryColor] || COLOR_THEMES.blue;
 
-  // Iniciar cadastro de biometria
+  // Iniciar cadastro de biometria (criação única de chave passkey)
   const handleStartEnrollment = () => {
     setShowEnrollmentModal(true);
     setEnrollmentStatus('idle');
     setEnrollmentError('');
   };
 
-  // Confirmar leitura e cadastrar biometria no aparelho usando API Nativa
+  // Confirmar leitura e cadastrar biometria no aparelho usando API Nativa (create passkey)
   const handleConfirmEnrollment = async () => {
     setEnrollmentStatus('scanning');
     setEnrollmentError('');
@@ -67,7 +72,7 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
           ...formData,
           biometricsEnabled: true,
           biometricsRegisteredAt: new Date().toLocaleDateString('pt-BR'),
-          biometricCredentialId: result.credentialId || formData.biometricCredentialId,
+          biometricCredentialId: result.credentialId || formData.biometricCredentialId || 'registered_passkey',
         };
         setFormData(updated);
         onUpdateProfile(updated);
@@ -86,12 +91,50 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
     }
   };
 
-  // Desativar biometria (volta ao padrão desativado)
-  const handleDeactivateBiometrics = () => {
+  // Alternar ativação de biometria (se já cadastrada)
+  const handleToggleBiometrics = (enabled: boolean) => {
+    if (enabled && !formData.biometricCredentialId) {
+      handleStartEnrollment();
+      return;
+    }
+    const updated: ManagerProfile = {
+      ...formData,
+      biometricsEnabled: enabled,
+    };
+    setFormData(updated);
+    onUpdateProfile(updated);
+  };
+
+  // Testar leitura da chave de biometria já cadastrada (apenas authenticate/get, sem create)
+  const handleTestBiometrics = async () => {
+    if (!formData.biometricCredentialId) return;
+    setTestStatus('testing');
+    setTestMsg('');
+    try {
+      const res = await verifyNativeBiometrics(formData.biometricCredentialId);
+      if (res.success) {
+        setTestStatus('success');
+        setTestMsg('Leitura biométrica confirmada com sucesso!');
+        setTimeout(() => setTestStatus('idle'), 3000);
+      } else {
+        setTestStatus('error');
+        setTestMsg(res.error || 'Falha na validação biométrica.');
+        setTimeout(() => setTestStatus('idle'), 3500);
+      }
+    } catch (err: any) {
+      setTestStatus('error');
+      setTestMsg(err?.message || 'Erro ao comunicar com o leitor.');
+      setTimeout(() => setTestStatus('idle'), 3500);
+    }
+  };
+
+  // Remover cadastro de biometria do app
+  const handleRemoveBiometrics = () => {
     const updated: ManagerProfile = {
       ...formData,
       biometricsEnabled: false,
       biometricCredentialId: undefined,
+      biometricsRegisteredAt: undefined,
     };
     setFormData(updated);
     onUpdateProfile(updated);
@@ -327,7 +370,7 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
                   </p>
                 </div>
 
-                {/* 2. Opção para Cadastrar e Ativar o Uso da Biometria (Desativada por padrão) */}
+                {/* 2. Opção para Cadastrar Biometria (Chave de Acesso / Passkey - Única Vez) */}
                 <div className="col-span-1 sm:col-span-2 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700/80 space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-start gap-3">
@@ -337,86 +380,110 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
                           <h4 className="text-sm font-black text-slate-900 dark:text-white">
-                            Cadastro e Ativação de Biometria / Face ID
+                            Biometria / Face ID (Chave de Acesso)
                           </h4>
-                          {formData.biometricsEnabled ? (
+                          {formData.biometricCredentialId ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                              <Check className="w-3 h-3" /> Ativada e Pronta
+                              <Check className="w-3 h-3" /> Chave Cadastrada
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/80 text-slate-700 dark:bg-slate-700 dark:text-slate-300">
-                              <Lock className="w-2.5 h-2.5" /> Desativada por Padrão
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                              <AlertCircle className="w-2.5 h-2.5" /> Não Cadastrada
                             </span>
                           )}
                         </div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
-                          Por padrão, a biometria vem desativada por segurança. Cadastre e ative para permitir o desbloqueio por Impressão Digital ou Face ID na tela de Acesso Protegido. Se desativada, o acesso exigirá obrigatoriamente o seu PIN de 4 dígitos.
+                          {formData.biometricCredentialId
+                            ? 'Sua chave de acesso foi gerada e está salva neste dispositivo. Ative ou desative o uso da biometria no desbloqueio sem precisar cadastrar novamente.'
+                            : 'Cadastre a biometria uma única vez nas configurações para gerar e salvar sua chave de acesso (Passkey) neste aparelho. Após o cadastro, o leitor nativo autenticará rapidamente na tela de bloqueio.'}
                         </p>
                       </div>
                     </div>
 
-                    {/* Switch de Ativação Rápida */}
-                    <div className="flex items-center gap-3 sm:self-center pl-11 sm:pl-0">
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={formData.biometricsEnabled}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              handleStartEnrollment();
-                            } else {
-                              handleDeactivateBiometrics();
-                            }
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
-                      </label>
-                    </div>
+                    {/* Switch de Ativação (se cadastrada) */}
+                    {formData.biometricCredentialId && (
+                      <div className="flex items-center gap-3 sm:self-center pl-11 sm:pl-0">
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.biometricsEnabled}
+                            onChange={(e) => handleToggleBiometrics(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                        </label>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Feedback de Teste de Autenticação */}
+                  {testMsg && (
+                    <div className={`p-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                      testStatus === 'success'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200'
+                        : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200'
+                    }`}>
+                      {testStatus === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                      <span>{testMsg}</span>
+                    </div>
+                  )}
 
                   {/* Barra de Ações: Cadastrar, Testar ou Desativar */}
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200/60 dark:border-slate-700/60 text-xs">
                     <div className="text-slate-500 dark:text-slate-400 text-[11px]">
-                      {formData.biometricsEnabled ? (
-                        <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Biometria autorizada para desbloqueio {formData.biometricsRegisteredAt ? `(${formData.biometricsRegisteredAt})` : ''}</span>
-                        </span>
-                      ) : (
+                      {!formData.biometricCredentialId ? (
                         <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-medium">
                           <AlertTriangle className="w-3.5 h-3.5" />
-                          <span>Desativada: O app solicitará apenas o PIN de 4 dígitos</span>
+                          <span>Pendente: Faça o cadastro único da biometria ao lado</span>
+                        </span>
+                      ) : formData.biometricsEnabled ? (
+                        <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Biometria ativa para desbloqueio {formData.biometricsRegisteredAt ? `(Cadastrada em ${formData.biometricsRegisteredAt})` : ''}</span>
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 font-medium">
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>Chave salva, mas desbloqueio biométrico pausado (usando apenas PIN)</span>
                         </span>
                       )}
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {!formData.biometricsEnabled ? (
+                      {!formData.biometricCredentialId ? (
                         <button
                           type="button"
                           onClick={handleStartEnrollment}
-                          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm transition cursor-pointer active:scale-95 ${activeThemeConfig.bgButton}`}
+                          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow-md transition cursor-pointer active:scale-95 ${activeThemeConfig.bgButton}`}
                         >
-                          <Scan className="w-3.5 h-3.5" />
-                          <span>Cadastrar e Ativar Biometria</span>
+                          <Fingerprint className="w-4 h-4" />
+                          <span>Cadastrar Biometria</span>
                         </button>
                       ) : (
                         <>
                           <button
                             type="button"
-                            onClick={handleStartEnrollment}
+                            onClick={handleTestBiometrics}
+                            disabled={testStatus === 'testing'}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-200/80 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 transition cursor-pointer"
                           >
                             <Scan className="w-3.5 h-3.5" />
-                            <span>Testar Sensor</span>
+                            <span>{testStatus === 'testing' ? 'Verificando...' : 'Testar Biometria'}</span>
                           </button>
                           <button
                             type="button"
-                            onClick={handleDeactivateBiometrics}
+                            onClick={handleStartEnrollment}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            <span>Recadastrar</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRemoveBiometrics}
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
                           >
-                            <span>Desativar</span>
+                            <span>Remover</span>
                           </button>
                         </>
                       )}
@@ -624,9 +691,14 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
 
               <div className="mt-4">
                 <p className="text-sm font-bold text-slate-800 dark:text-white">
-                  {enrollmentStatus === 'idle' && 'Posicione sua digital ou utilize Face ID'}
-                  {enrollmentStatus === 'scanning' && 'Registrando sensor biométrico...'}
-                  {enrollmentStatus === 'success' && 'Biometria cadastrada e ativada!'}
+                  {enrollmentStatus === 'idle' && 'Cadastro Único de Chave de Acesso'}
+                  {enrollmentStatus === 'scanning' && 'Aguardando validação do sensor biométrico...'}
+                  {enrollmentStatus === 'success' && 'Chave de acesso criada e salva com sucesso!'}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
+                  {enrollmentStatus === 'idle' && 'Esta etapa cria sua chave de acesso (Passkey) uma única vez no dispositivo. Na tela de bloqueio, será solicitada apenas a verificação rápida.'}
+                  {enrollmentStatus === 'scanning' && 'Toque no leitor de digital ou olhe para o sensor de Face ID do aparelho.'}
+                  {enrollmentStatus === 'success' && 'A biometria foi ativada. Você já pode utilizá-la no desbloqueio.'}
                 </p>
                 {enrollmentError && (
                   <div className="mt-3 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-xs font-semibold text-rose-600 dark:text-rose-400">
@@ -644,8 +716,8 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
                   disabled={enrollmentStatus === 'scanning'}
                   className={`w-full py-3 rounded-xl text-xs font-bold text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition active:scale-95 ${activeThemeConfig.bgButton}`}
                 >
-                  <Scan className="w-4 h-4" />
-                  <span>{enrollmentStatus === 'scanning' ? 'Registrando Sensor...' : 'Confirmar e Ativar Biometria'}</span>
+                  <Fingerprint className="w-4 h-4" />
+                  <span>{enrollmentStatus === 'scanning' ? 'Registrando Chave...' : 'Criar e Cadastrar Chave de Acesso'}</span>
                 </button>
               )}
 
