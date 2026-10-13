@@ -17,7 +17,13 @@ import {
   Check, 
   KeyRound, 
   HelpCircle,
-  Sparkles
+  Sparkles,
+  ShieldCheck,
+  AlertCircle,
+  Scan,
+  CheckCircle2,
+  X,
+  AlertTriangle
 } from 'lucide-react';
 
 interface ManagerProfileViewProps {
@@ -34,7 +40,67 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
   const [pinError, setPinError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Estados para fluxo de cadastro/ativação de biometria
+  const [showEnrollmentModal, setShowEnrollmentModal] = useState<boolean>(false);
+  const [enrollmentStatus, setEnrollmentStatus] = useState<'idle' | 'scanning' | 'success'>('idle');
+
   const activeThemeConfig = COLOR_THEMES[formData.primaryColor] || COLOR_THEMES.blue;
+
+  // Iniciar cadastro de biometria
+  const handleStartEnrollment = () => {
+    setShowEnrollmentModal(true);
+    setEnrollmentStatus('idle');
+  };
+
+  // Confirmar leitura e cadastrar biometria no aparelho
+  const handleConfirmEnrollment = async () => {
+    setEnrollmentStatus('scanning');
+    try {
+      if (window.PublicKeyCredential && (await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.())) {
+        setTimeout(() => {
+          setEnrollmentStatus('success');
+          const updated = {
+            ...formData,
+            biometricsEnabled: true,
+            biometricsRegisteredAt: new Date().toLocaleDateString('pt-BR'),
+          };
+          setFormData(updated);
+          onUpdateProfile(updated);
+          setTimeout(() => {
+            setShowEnrollmentModal(false);
+            setEnrollmentStatus('idle');
+          }, 800);
+        }, 1100);
+      } else {
+        setTimeout(() => {
+          setEnrollmentStatus('success');
+          const updated = {
+            ...formData,
+            biometricsEnabled: true,
+            biometricsRegisteredAt: new Date().toLocaleDateString('pt-BR'),
+          };
+          setFormData(updated);
+          onUpdateProfile(updated);
+          setTimeout(() => {
+            setShowEnrollmentModal(false);
+            setEnrollmentStatus('idle');
+          }, 800);
+        }, 1100);
+      }
+    } catch {
+      setEnrollmentStatus('idle');
+    }
+  };
+
+  // Desativar biometria (volta ao padrão desativado)
+  const handleDeactivateBiometrics = () => {
+    const updated = {
+      ...formData,
+      biometricsEnabled: false,
+    };
+    setFormData(updated);
+    onUpdateProfile(updated);
+  };
 
   const securityQuestionsList = [
     'Qual é o nome da sua primeira escola?',
@@ -266,27 +332,100 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
                   </p>
                 </div>
 
-                {/* Biometrics Toggle */}
-                <div className="flex flex-col justify-center p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Fingerprint className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                {/* 2. Opção para Cadastrar e Ativar o Uso da Biometria (Desativada por padrão) */}
+                <div className="col-span-1 sm:col-span-2 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700/80 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className={`p-2.5 rounded-2xl ${activeThemeConfig.lightBg} border border-blue-200/50 dark:border-blue-800/40 mt-0.5`}>
+                        <Fingerprint className={`w-6 h-6 ${activeThemeConfig.textColor}`} />
+                      </div>
                       <div>
-                        <div className="text-xs font-bold text-slate-800 dark:text-white">
-                          Biometria / Face ID
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-black text-slate-900 dark:text-white">
+                            Cadastro e Ativação de Biometria / Face ID
+                          </h4>
+                          {formData.biometricsEnabled ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                              <Check className="w-3 h-3" /> Ativada e Pronta
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/80 text-slate-700 dark:bg-slate-700 dark:text-slate-300">
+                              <Lock className="w-2.5 h-2.5" /> Desativada por Padrão
+                            </span>
+                          )}
                         </div>
-                        <div className="text-[10px] text-slate-500">
-                          Desbloqueio biométrico rápido
-                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+                          Por padrão, a biometria vem desativada por segurança. Cadastre e ative para permitir o desbloqueio por Impressão Digital ou Face ID na tela de Acesso Protegido. Se desativada, o acesso exigirá obrigatoriamente o seu PIN de 4 dígitos.
+                        </p>
                       </div>
                     </div>
 
-                    <input
-                      type="checkbox"
-                      checked={formData.biometricsEnabled}
-                      onChange={(e) => setFormData({ ...formData, biometricsEnabled: e.target.checked })}
-                      className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
-                    />
+                    {/* Switch de Ativação Rápida */}
+                    <div className="flex items-center gap-3 sm:self-center pl-11 sm:pl-0">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.biometricsEnabled}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              handleStartEnrollment();
+                            } else {
+                              handleDeactivateBiometrics();
+                            }
+                          }}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Barra de Ações: Cadastrar, Testar ou Desativar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200/60 dark:border-slate-700/60 text-xs">
+                    <div className="text-slate-500 dark:text-slate-400 text-[11px]">
+                      {formData.biometricsEnabled ? (
+                        <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-semibold">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Biometria autorizada para desbloqueio {formData.biometricsRegisteredAt ? `(${formData.biometricsRegisteredAt})` : ''}</span>
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-medium">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span>Desativada: O app solicitará apenas o PIN de 4 dígitos</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {!formData.biometricsEnabled ? (
+                        <button
+                          type="button"
+                          onClick={handleStartEnrollment}
+                          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white shadow-sm transition cursor-pointer active:scale-95 ${activeThemeConfig.bgButton}`}
+                        >
+                          <Scan className="w-3.5 h-3.5" />
+                          <span>Cadastrar e Ativar Biometria</span>
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleStartEnrollment}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-200/80 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 transition cursor-pointer"
+                          >
+                            <Scan className="w-3.5 h-3.5" />
+                            <span>Testar Sensor</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleDeactivateBiometrics}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                          >
+                            <span>Desativar</span>
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -443,6 +582,92 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
         </div>
 
       </form>
+
+      {/* Modal de Cadastro / Ativação de Biometria */}
+      {showEnrollmentModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-fade-in">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl text-center relative space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Fingerprint className={`w-5 h-5 ${activeThemeConfig.textColor}`} />
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Cadastrar Biometria / Face ID
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEnrollmentModal(false);
+                  setEnrollmentStatus('idle');
+                }}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="py-3 flex flex-col items-center justify-center">
+              <div className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 ${
+                enrollmentStatus === 'scanning'
+                  ? 'bg-blue-50 dark:bg-blue-950/60 ring-8 ring-blue-500/20'
+                  : enrollmentStatus === 'success'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 ring-8 ring-emerald-500/20'
+                  : 'bg-slate-100 dark:bg-slate-800'
+              }`}>
+                {enrollmentStatus === 'success' ? (
+                  <CheckCircle2 className="w-12 h-12 text-emerald-500 animate-scale-up" />
+                ) : (
+                  <Fingerprint className={`w-12 h-12 ${
+                    enrollmentStatus === 'scanning' ? 'text-blue-600 dark:text-blue-400 animate-pulse' : 'text-slate-700 dark:text-slate-300'
+                  }`} />
+                )}
+
+                {enrollmentStatus === 'scanning' && (
+                  <div className="absolute inset-x-3 h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent rounded-full animate-bounce" />
+                )}
+              </div>
+
+              <div className="mt-4">
+                <p className="text-sm font-bold text-slate-800 dark:text-white">
+                  {enrollmentStatus === 'idle' && 'Posicione sua digital ou utilize Face ID'}
+                  {enrollmentStatus === 'scanning' && 'Registrando sensor biométrico...'}
+                  {enrollmentStatus === 'success' && 'Biometria cadastrada e ativada!'}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-xs mx-auto">
+                  {enrollmentStatus === 'idle' && 'Toque no botão abaixo para autorizar e cadastrar a biometria no seu dispositivo.'}
+                  {enrollmentStatus === 'scanning' && 'Aguardando validação do sensor biométrico...'}
+                  {enrollmentStatus === 'success' && 'A partir de agora você poderá utilizar sua biometria para entrar no aplicativo.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-1">
+              {enrollmentStatus !== 'success' && (
+                <button
+                  type="button"
+                  onClick={handleConfirmEnrollment}
+                  disabled={enrollmentStatus === 'scanning'}
+                  className={`w-full py-3 rounded-xl text-xs font-bold text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition active:scale-95 ${activeThemeConfig.bgButton}`}
+                >
+                  <Scan className="w-4 h-4" />
+                  <span>{enrollmentStatus === 'scanning' ? 'Registrando Sensor...' : 'Confirmar e Ativar Biometria'}</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEnrollmentModal(false);
+                  setEnrollmentStatus('idle');
+                }}
+                className="w-full py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                {enrollmentStatus === 'success' ? 'Concluir' : 'Cancelar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

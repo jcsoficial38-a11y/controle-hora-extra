@@ -45,6 +45,7 @@ export interface ManagerProfile {
   securityQuestion?: string;
   securityAnswer?: string;
   biometricsEnabled: boolean;
+  biometricsRegisteredAt?: string;
   theme: AppTheme;
   primaryColor: AppColorTheme;
 }
