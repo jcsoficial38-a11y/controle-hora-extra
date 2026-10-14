@@ -85,7 +85,7 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
 
     // Regra 3: Se o usuário ainda não tiver cadastrado a biometria previamente nas configurações:
     if (!isRegistered) {
-      const msg = 'Cadastre a biometria nas configurações do app primeiro';
+      const msg = 'Biometria não cadastrada. Acesse com seu PIN e ative nas configurações do app.';
       setErrorMsg(msg);
       setShowDisabledBiometricsAlert(true);
       return;
@@ -114,6 +114,7 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
           setBiometricErrorDetails('');
           onSuccess();
         }, 500);
+      } else {
         setBiometricsStatus('error');
         setBiometricErrorDetails(
           result.error || 'Leitura cancelada ou não reconhecida pelo leitor biométrico.'

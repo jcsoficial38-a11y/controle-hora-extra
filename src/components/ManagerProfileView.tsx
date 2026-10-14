@@ -1,7 +1,14 @@
-import React, { useState, useRef } from 'react';
-import { ManagerProfile, AppTheme, AppColorTheme } from '../types/overtime';
+import React, { useState, useRef, useEffect } from 'react';
+import { ManagerProfile, AppTheme, AppColorTheme, OvertimeRecord } from '../types/overtime';
 import { COLOR_THEMES } from '../utils/theme';
 import { registerNativeBiometrics, verifyNativeBiometrics } from '../utils/biometrics';
+import { 
+  connectWithGoogle, 
+  disconnectFromFirebase, 
+  onAuthUserChanged, 
+  syncRecordsWithCloud 
+} from '../services/firebase';
+import { User as FirebaseUser } from 'firebase/auth';
 import { 
   User, 
   Mail, 
@@ -25,22 +32,140 @@ import {
   CheckCircle2,
   X,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
+  Cloud,
+  Database,
+  LogOut,
+  Globe
 } from 'lucide-react';
 
 interface ManagerProfileViewProps {
   profile: ManagerProfile;
   onUpdateProfile: (updated: ManagerProfile) => void;
+  records?: OvertimeRecord[];
+  onRecordsUpdated?: (updated: OvertimeRecord[]) => void;
 }
 
 export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
   profile,
   onUpdateProfile,
+  records = [],
+  onRecordsUpdated,
 }) => {
   const [formData, setFormData] = useState<ManagerProfile>({ ...profile });
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [pinError, setPinError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Estados para integração com Firebase (Banco de Dados na Nuvem)
+  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [syncFeedback, setSyncFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Monitorar autenticação do Firebase
+  useEffect(() => {
+    const unsubscribe = onAuthUserChanged((user) => {
+      setAuthUser(user);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Conectar com Google e sincronizar automaticamente
+  const handleConnectGoogle = async () => {
+    setIsSyncing(true);
+    setSyncFeedback(null);
+    try {
+      const user = await connectWithGoogle();
+      setAuthUser(user);
+      // Sincronização automática com Firestore ao conectar
+      const syncRes = await syncRecordsWithCloud(user, records);
+      if (syncRes.success) {
+        setLastSyncTime(syncRes.lastSync);
+        if (onRecordsUpdated && syncRes.mergedRecords) {
+          onRecordsUpdated(syncRes.mergedRecords);
+        }
+        setSyncFeedback({
+          type: 'success',
+          message: `Conectado com sucesso! ${syncRes.syncedCount} lançamentos sincronizados no Firestore.`
+        });
+      } else {
+        setSyncFeedback({
+          type: 'error',
+          message: syncRes.error || 'Conectado, mas ocorreu uma falha ao sincronizar com o Firestore.'
+        });
+      }
+    } catch (err: any) {
+      console.error('[Firebase] Erro ao conectar:', err);
+      // Tratar popup fechado pelo usuário com mensagem amigável
+      if (err?.code === 'auth/popup-closed-by-user') {
+        setSyncFeedback({
+          type: 'error',
+          message: 'A janela de autenticação foi fechada antes de concluir o login.'
+        });
+      } else {
+        setSyncFeedback({
+          type: 'error',
+          message: err?.message || 'Falha ao conectar com o Google.'
+        });
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Sincronizar manualmente
+  const handleManualSync = async () => {
+    if (!authUser) return;
+    setIsSyncing(true);
+    setSyncFeedback(null);
+    try {
+      const syncRes = await syncRecordsWithCloud(authUser, records);
+      if (syncRes.success) {
+        setLastSyncTime(syncRes.lastSync);
+        if (onRecordsUpdated && syncRes.mergedRecords) {
+          onRecordsUpdated(syncRes.mergedRecords);
+        }
+        setSyncFeedback({
+          type: 'success',
+          message: `Firestore sincronizado! ${syncRes.syncedCount} registros confirmados na nuvem.`
+        });
+        setTimeout(() => setSyncFeedback(null), 5000);
+      } else {
+        setSyncFeedback({
+          type: 'error',
+          message: syncRes.error || 'Erro ao sincronizar com o Firestore.'
+        });
+      }
+    } catch (err: any) {
+      setSyncFeedback({
+        type: 'error',
+        message: err?.message || 'Erro ao enviar dados para a nuvem.'
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Desconectar da nuvem
+  const handleDisconnect = async () => {
+    try {
+      await disconnectFromFirebase();
+      setAuthUser(null);
+      setSyncFeedback({
+        type: 'success',
+        message: 'Desconectado da nuvem. Seus dados continuam preservados no dispositivo.'
+      });
+      setTimeout(() => setSyncFeedback(null), 4000);
+    } catch (err: any) {
+      setSyncFeedback({
+        type: 'error',
+        message: err?.message || 'Erro ao desconectar da nuvem.'
+      });
+    }
+  };
 
   // Estados para fluxo de cadastro/ativação de biometria
   const [showEnrollmentModal, setShowEnrollmentModal] = useState<boolean>(false);
@@ -540,6 +665,190 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
           ) : (
             <div className="text-xs text-slate-500 dark:text-slate-400 py-2">
               O aplicativo abrirá diretamente sem solicitar senha ao entrar. Para proteger o acesso aos lançamentos, ative a chave acima.
+            </div>
+          )}
+        </div>
+
+        {/* Card: Banco de Dados na Nuvem (Firebase / Firestore) */}
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Cloud className={`w-4 h-4 ${activeThemeConfig.textColor}`} />
+              <span>Banco de Dados na Nuvem</span>
+            </h2>
+
+            {/* Indicador de Status Firestore */}
+            <div>
+              {authUser ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 shadow-xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>Firestore Conectado</span>
+                  <span className="text-emerald-600 dark:text-emerald-400">•</span>
+                  <span>Sincronizado Online</span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                  <Database className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Armazenamento Local Ativo</span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Feedback de Sincronização / Conexão */}
+          {syncFeedback && (
+            <div className={`p-3.5 rounded-2xl text-xs font-semibold flex items-center gap-2 animate-fade-in ${
+              syncFeedback.type === 'success'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900'
+            }`}>
+              {syncFeedback.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+              )}
+              <span className="flex-1">{syncFeedback.message}</span>
+            </div>
+          )}
+
+          {/* Conteúdo: Não Conectado vs Conectado */}
+          {!authUser ? (
+            <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700/80 flex flex-col md:flex-row md:items-center justify-between gap-5">
+              <div className="space-y-1.5 max-w-xl">
+                <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-sm">
+                  <Database className="w-4 h-4 text-blue-500" />
+                  <span>Sincronização em Tempo Real com Firestore</span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Conecte sua conta Google para salvar e sincronizar seus lançamentos de horas extras diretamente no banco de dados na nuvem Firebase Firestore. Seus dados ficam protegidos e disponíveis em qualquer aparelho.
+                </p>
+                <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500 pt-1">
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Backup automático contínuo com segurança do Google Cloud</span>
+                </div>
+              </div>
+
+              <div className="shrink-0">
+                <button
+                  type="button"
+                  onClick={handleConnectGoogle}
+                  disabled={isSyncing}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-5 py-3 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-white border-2 border-slate-300 dark:border-slate-600 font-bold text-xs sm:text-sm shadow-md hover:shadow-lg transition cursor-pointer active:scale-95 disabled:opacity-60"
+                >
+                  {isSyncing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-blue-500" />
+                      <span>Conectando...</span>
+                    </>
+                  ) : (
+                    <>
+                      {/* Ícone oficial do Google em SVG */}
+                      <svg className="w-4 h-4" viewBox="0 0 24 24">
+                        <path
+                          fill="#4285F4"
+                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                        />
+                      </svg>
+                      <span>Conectar com Google (Ativar Nuvem)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700/80 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                
+                {/* Dados do Usuário Logado */}
+                <div className="flex items-center gap-3">
+                  {authUser.photoURL ? (
+                    <img
+                      src={authUser.photoURL}
+                      alt={authUser.displayName || 'Google'}
+                      className="w-12 h-12 rounded-2xl border-2 border-emerald-500 object-cover shadow-sm"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-lg shadow-sm">
+                      {(authUser.displayName || authUser.email || 'G').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        Conectado como:
+                      </span>
+                      <span className="text-xs font-black text-slate-900 dark:text-white">
+                        {authUser.displayName || authUser.email}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                      {authUser.email}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Firestore Conectado / Sincronizado Online</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Métricas e Última Sincronização */}
+                <div className="flex items-center gap-3 bg-white dark:bg-slate-900/80 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Registros na Nuvem</span>
+                    <span className="font-extrabold text-slate-800 dark:text-white">{records.length} itens</span>
+                  </div>
+                  <div className="h-6 w-px bg-slate-200 dark:bg-slate-700" />
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Última Sincronização</span>
+                    <span className="font-extrabold text-slate-800 dark:text-white">
+                      {lastSyncTime ? `Hoje às ${lastSyncTime}` : 'Automática'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Barra de Ações: Sincronizar Agora & Desconectar */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Qualquer novo lançamento ou alteração é salvo localmente e replicado para o Firestore.
+                </p>
+
+                <div className="flex items-center gap-2.5 ml-auto">
+                  <button
+                    type="button"
+                    onClick={handleManualSync}
+                    disabled={isSyncing}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/20 transition cursor-pointer active:scale-95 disabled:opacity-60"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                    <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar Agora'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDisconnect}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 transition cursor-pointer active:scale-95"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Desconectar</span>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

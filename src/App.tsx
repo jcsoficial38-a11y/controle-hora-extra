@@ -220,6 +220,8 @@ export default function App() {
               <ManagerProfileView
                 profile={profile}
                 onUpdateProfile={(updated) => setProfile(updated)}
+                records={records}
+                onRecordsUpdated={(updated) => setRecords(updated)}
               />
             )}
 

@@ -1,0 +1,76 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Default-Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Security Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidRecord(data, userId) {
+      return data.keys().hasAll(['id', 'userId', 'date', 'employeeName', 'hours', 'status', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'date', 'employeeName', 'hours', 'status', 'reason', 'ratePerHour', 'overtimeType', 'createdAt', 'updatedAt']) &&
+        data.userId == userId &&
+        data.userId == request.auth.uid &&
+        data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+        data.date is string && data.date.size() <= 30 &&
+        data.employeeName is string && data.employeeName.size() > 0 && data.employeeName.size() <= 150 &&
+        data.hours is number && data.hours >= 0 && data.hours <= 24 &&
+        (data.status == 'pendente' || data.status == 'pago') &&
+        (!('reason' in data) || (data.reason is string && data.reason.size() <= 500)) &&
+        (!('ratePerHour' in data) || (data.ratePerHour is number && data.ratePerHour >= 0)) &&
+        (!('overtimeType' in data) || (data.overtimeType in ['50%', '100%', 'noturno', 'banco'])) &&
+        data.createdAt is string && data.createdAt.size() <= 50 &&
+        (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50));
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['userId', 'email']) &&
+        data.keys().hasOnly(['userId', 'name', 'email', 'company', 'lastSyncedAt']) &&
+        data.userId == userId &&
+        data.userId == request.auth.uid &&
+        data.email is string && data.email.size() <= 200 &&
+        (!('name' in data) || (data.name is string && data.name.size() <= 150)) &&
+        (!('company' in data) || (data.company is string && data.company.size() <= 200)) &&
+        (!('lastSyncedAt' in data) || (data.lastSyncedAt is string && data.lastSyncedAt.size() <= 50));
+    }
+
+    // User Document & Subcollections
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUserProfile(incoming(), userId);
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // Overtime Records Collection for the authenticated manager
+      match /overtimeRecords/{recordId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(recordId);
+        allow list: if isOwner(userId) && isValidId(userId);
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(recordId) && isValidRecord(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(recordId) && isValidRecord(incoming(), userId);
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(recordId);
+      }
+    }
+  }
+}

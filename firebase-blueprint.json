@@ -1,0 +1,92 @@
+{
+  "entities": {
+    "OvertimeRecord": {
+      "title": "OvertimeRecord",
+      "description": "Registro de hora extra de colaborador no sistema de Controle de Hora Extra",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "date": {
+          "type": "string",
+          "maxLength": 30
+        },
+        "employeeName": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "hours": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pendente", "pago"]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "ratePerHour": {
+          "type": "number"
+        },
+        "overtimeType": {
+          "type": "string",
+          "enum": ["50%", "100%", "noturno", "banco"]
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 50
+        }
+      },
+      "required": ["id", "userId", "date", "employeeName", "hours", "status", "createdAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Dados de perfil e sincronização do usuário gestor",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 150
+        },
+        "email": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "company": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "lastSyncedAt": {
+          "type": "string",
+          "maxLength": 50
+        }
+      },
+      "required": ["userId", "email"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Perfil do gestor autenticado"
+    },
+    "/users/{userId}/overtimeRecords/{recordId}": {
+      "schema": "OvertimeRecord",
+      "description": "Coleção de registros de hora extra vinculados ao usuário autenticado"
+    }
+  }
+}
