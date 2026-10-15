@@ -3,6 +3,7 @@ import { ManagerProfile, AppTheme, AppColorTheme, OvertimeRecord } from '../type
 import { COLOR_THEMES } from '../utils/theme';
 import { registerNativeBiometrics, verifyNativeBiometrics } from '../utils/biometrics';
 import { 
+  auth,
   connectWithGoogle, 
   disconnectFromFirebase, 
   onAuthUserChanged, 
@@ -44,6 +45,9 @@ interface ManagerProfileViewProps {
   onUpdateProfile: (updated: ManagerProfile) => void;
   records?: OvertimeRecord[];
   onRecordsUpdated?: (updated: OvertimeRecord[]) => void;
+  cloudUser?: FirebaseUser | null;
+  isCloudSyncing?: boolean;
+  lastCloudSync?: string | null;
 }
 
 export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
@@ -51,6 +55,9 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
   onUpdateProfile,
   records = [],
   onRecordsUpdated,
+  cloudUser,
+  isCloudSyncing,
+  lastCloudSync,
 }) => {
   const [formData, setFormData] = useState<ManagerProfile>({ ...profile });
   const [savedSuccess, setSavedSuccess] = useState(false);
@@ -58,20 +65,60 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Estados para integração com Firebase (Banco de Dados na Nuvem)
-  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
-  const [authLoading, setAuthLoading] = useState<boolean>(true);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
-  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+  const [authUser, setAuthUser] = useState<FirebaseUser | null>(cloudUser || auth.currentUser);
+  const [authLoading, setAuthLoading] = useState<boolean>(!cloudUser && !auth.currentUser);
+  const [isSyncing, setIsSyncing] = useState<boolean>(isCloudSyncing || false);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(
+    lastCloudSync || localStorage.getItem('controle_hora_extra_firebase_last_sync')
+  );
   const [syncFeedback, setSyncFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Monitorar autenticação do Firebase
+  // Sincronizar com props fornecidas por App.tsx
   useEffect(() => {
-    const unsubscribe = onAuthUserChanged((user) => {
+    if (cloudUser !== undefined) {
+      setAuthUser(cloudUser);
+      setAuthLoading(false);
+    }
+  }, [cloudUser]);
+
+  useEffect(() => {
+    if (isCloudSyncing !== undefined) {
+      setIsSyncing(isCloudSyncing);
+    }
+  }, [isCloudSyncing]);
+
+  useEffect(() => {
+    if (lastCloudSync !== undefined) {
+      setLastSyncTime(lastCloudSync);
+    }
+  }, [lastCloudSync]);
+
+  // Monitorar autenticação do Firebase e garantir auto-sincronização na inicialização
+  useEffect(() => {
+    const unsubscribe = onAuthUserChanged(async (user) => {
       setAuthUser(user);
       setAuthLoading(false);
+      // Se o usuário já estiver salvo na sessão, ativa a sincronização com o Firestore automaticamente
+      if (user && !lastSyncTime) {
+        setIsSyncing(true);
+        try {
+          const syncRes = await syncRecordsWithCloud(user, records);
+          if (syncRes.success) {
+            setLastSyncTime(syncRes.lastSync);
+            localStorage.setItem('controle_hora_extra_firebase_last_sync', syncRes.lastSync);
+            if (onRecordsUpdated && syncRes.mergedRecords) {
+              onRecordsUpdated(syncRes.mergedRecords);
+            }
+          }
+        } catch (err) {
+          console.warn('[Firebase] Erro na auto-sincronização de abertura:', err);
+        } finally {
+          setIsSyncing(false);
+        }
+      }
     });
     return () => unsubscribe();
-  }, []);
+  }, [records, onRecordsUpdated, lastSyncTime]);
 
   // Conectar com Google e sincronizar automaticamente
   const handleConnectGoogle = async () => {
@@ -84,12 +131,13 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
       const syncRes = await syncRecordsWithCloud(user, records);
       if (syncRes.success) {
         setLastSyncTime(syncRes.lastSync);
+        localStorage.setItem('controle_hora_extra_firebase_last_sync', syncRes.lastSync);
         if (onRecordsUpdated && syncRes.mergedRecords) {
           onRecordsUpdated(syncRes.mergedRecords);
         }
         setSyncFeedback({
           type: 'success',
-          message: `Conectado com sucesso! ${syncRes.syncedCount} lançamentos sincronizados no Firestore.`
+          message: `Conectado com sucesso! Sincronizado Online (${syncRes.syncedCount} lançamentos no Firestore).`
         });
       } else {
         setSyncFeedback({
@@ -125,12 +173,13 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
       const syncRes = await syncRecordsWithCloud(authUser, records);
       if (syncRes.success) {
         setLastSyncTime(syncRes.lastSync);
+        localStorage.setItem('controle_hora_extra_firebase_last_sync', syncRes.lastSync);
         if (onRecordsUpdated && syncRes.mergedRecords) {
           onRecordsUpdated(syncRes.mergedRecords);
         }
         setSyncFeedback({
           type: 'success',
-          message: `Firestore sincronizado! ${syncRes.syncedCount} registros confirmados na nuvem.`
+          message: `Firestore sincronizado! Sincronizado Online com ${syncRes.syncedCount} registros confirmados na nuvem.`
         });
         setTimeout(() => setSyncFeedback(null), 5000);
       } else {
@@ -154,6 +203,8 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
     try {
       await disconnectFromFirebase();
       setAuthUser(null);
+      setLastSyncTime(null);
+      localStorage.removeItem('controle_hora_extra_firebase_last_sync');
       setSyncFeedback({
         type: 'success',
         message: 'Desconectado da nuvem. Seus dados continuam preservados no dispositivo.'

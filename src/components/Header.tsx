@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { ManagerProfile } from '../types/overtime';
 import { COLOR_THEMES } from '../utils/theme';
+import { User as FirebaseUser } from 'firebase/auth';
 
 export type ActiveTab = 'lancamentos' | 'calendario' | 'perfil';
 
@@ -21,6 +22,8 @@ interface HeaderProps {
   onBackToSplash: () => void;
   profile: ManagerProfile;
   onToggleTheme: () => void;
+  cloudUser?: FirebaseUser | null;
+  isCloudSyncing?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -31,6 +34,8 @@ export const Header: React.FC<HeaderProps> = ({
   onBackToSplash,
   profile,
   onToggleTheme,
+  cloudUser,
+  isCloudSyncing,
 }) => {
   const themeConfig = COLOR_THEMES[profile.primaryColor] || COLOR_THEMES.blue;
 
@@ -107,6 +112,19 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Right Action Buttons */}
           <div className="flex items-center gap-2">
             
+            {/* Indicador visual Sincronizado Online quando logado */}
+            {cloudUser && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('perfil')}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 shadow-2xs hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition cursor-pointer"
+                title={`Conectado como ${cloudUser.displayName || cloudUser.email || 'Usuário'} - Firestore Sincronizado Online`}
+              >
+                <span className={`w-2 h-2 rounded-full bg-emerald-500 ${isCloudSyncing ? 'animate-ping' : 'animate-pulse'}`} />
+                <span>{isCloudSyncing ? 'Sincronizando...' : 'Sincronizado Online'}</span>
+              </button>
+            )}
+
             {/* Quick Dark/Light Mode Switch */}
             <button
               onClick={onToggleTheme}
@@ -168,11 +186,16 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('perfil')}
-            className={`flex-1 flex flex-col items-center py-1.5 px-2 rounded-xl text-[11px] font-semibold transition ${
+            className={`flex-1 flex flex-col items-center py-1.5 px-2 rounded-xl text-[11px] font-semibold transition relative ${
               activeTab === 'perfil' ? 'text-blue-600 dark:text-blue-400 bg-blue-50/70 dark:bg-blue-900/30 font-bold' : 'text-slate-600 dark:text-slate-400'
             }`}
           >
-            <User className="w-4 h-4 mb-0.5" />
+            <div className="relative">
+              <User className="w-4 h-4 mb-0.5" />
+              {cloudUser && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
+              )}
+            </div>
             <span>Perfil</span>
           </button>
         </div>

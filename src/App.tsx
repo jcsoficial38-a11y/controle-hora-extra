@@ -16,6 +16,8 @@ import { ExportModal } from './components/ExportModal';
 import { DataManagementModal } from './components/DataManagementModal';
 import { PinLockModal } from './components/PinLockModal';
 import confetti from 'canvas-confetti';
+import { auth, onAuthUserChanged, syncRecordsWithCloud } from './services/firebase';
+import { User as FirebaseUser } from 'firebase/auth';
 
 export default function App() {
   const [records, setRecords] = useState<OvertimeRecord[]>(() => loadRecords());
@@ -30,6 +32,44 @@ export default function App() {
   const [defaultDateForForm, setDefaultDateForForm] = useState<string | undefined>();
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isDataModalOpen, setIsDataModalOpen] = useState(false);
+
+  // Estados de Autenticação e Sincronização em Nuvem (Firebase Firestore)
+  const [cloudUser, setCloudUser] = useState<FirebaseUser | null>(() => auth.currentUser);
+  const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(false);
+  const [lastCloudSyncTime, setLastCloudSyncTime] = useState<string | null>(() => {
+    return localStorage.getItem('controle_hora_extra_firebase_last_sync') || null;
+  });
+
+  // 2. Observador onAuthStateChanged(auth, (user) => { ... }) no carregamento da página
+  // Verifica automaticamente se já existe um usuário logado e salvo na sessão local
+  useEffect(() => {
+    const unsubscribe = onAuthUserChanged(async (user) => {
+      setCloudUser(user);
+      if (user) {
+        console.log('[Firebase] Usuário restaurado da sessão persistida:', user.email);
+        setIsCloudSyncing(true);
+        try {
+          // 3. Reconectar e ativar a sincronização com o Firestore de forma automática
+          const currentRecords = loadRecords();
+          const syncRes = await syncRecordsWithCloud(user, currentRecords);
+          if (syncRes.success) {
+            if (syncRes.mergedRecords && syncRes.mergedRecords.length > 0) {
+              setRecords(syncRes.mergedRecords);
+              saveRecords(syncRes.mergedRecords);
+            }
+            setLastCloudSyncTime(syncRes.lastSync);
+            localStorage.setItem('controle_hora_extra_firebase_last_sync', syncRes.lastSync);
+          }
+        } catch (error) {
+          console.error('[Firebase] Erro na auto-sincronização na inicialização:', error);
+        } finally {
+          setIsCloudSyncing(false);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Inicialização do Armazenamento Durável e Proteção Persistente contra perda de dados
   useEffect(() => {
@@ -108,14 +148,27 @@ export default function App() {
     setProfile(prev => ({ ...prev, theme: newTheme }));
   };
 
+  // Sincronização em segundo plano no Firestore após mutações se o usuário estiver logado
+  const syncWithCloudIfLoggedIn = (updatedRecords: OvertimeRecord[]) => {
+    if (auth.currentUser) {
+      syncRecordsWithCloud(auth.currentUser, updatedRecords)
+        .then((res) => {
+          if (res.success) {
+            setLastCloudSyncTime(res.lastSync);
+            localStorage.setItem('controle_hora_extra_firebase_last_sync', res.lastSync);
+          }
+        })
+        .catch((e) => console.warn('[Firebase] Falha na auto-sincronização em segundo plano:', e));
+    }
+  };
+
   // CRUD actions
   const handleSaveRecord = (record: OvertimeRecord) => {
     setRecords(prev => {
       const exists = prev.some(r => r.id === record.id);
-      if (exists) {
-        return prev.map(r => r.id === record.id ? record : r);
-      }
-      return [record, ...prev];
+      const updated = exists ? prev.map(r => r.id === record.id ? record : r) : [record, ...prev];
+      syncWithCloudIfLoggedIn(updated);
+      return updated;
     });
 
     if (record.status === 'pago') {
@@ -133,20 +186,23 @@ export default function App() {
     setRecords(prev => {
       const updated = prev.filter(r => r.id !== id);
       saveRecords(updated);
+      syncWithCloudIfLoggedIn(updated);
       return updated;
     });
   };
 
   const handleToggleStatus = (id: string) => {
-    setRecords(prev =>
-      prev.map(r => {
+    setRecords(prev => {
+      const updated = prev.map(r => {
         if (r.id === id) {
           const newStatus: OvertimeStatus = r.status === 'pago' ? 'pendente' : 'pago';
           return { ...r, status: newStatus };
         }
         return r;
-      })
-    );
+      });
+      syncWithCloudIfLoggedIn(updated);
+      return updated;
+    });
   };
 
   const handleOpenNewRecordModal = (date?: string) => {
@@ -182,6 +238,8 @@ export default function App() {
             onBackToSplash={() => setShowSplash(true)}
             profile={profile}
             onToggleTheme={handleToggleTheme}
+            cloudUser={cloudUser}
+            isCloudSyncing={isCloudSyncing}
           />
 
           {/* Main Content Area */}
@@ -222,6 +280,9 @@ export default function App() {
                 onUpdateProfile={(updated) => setProfile(updated)}
                 records={records}
                 onRecordsUpdated={(updated) => setRecords(updated)}
+                cloudUser={cloudUser}
+                isCloudSyncing={isCloudSyncing}
+                lastCloudSync={lastCloudSyncTime}
               />
             )}
 

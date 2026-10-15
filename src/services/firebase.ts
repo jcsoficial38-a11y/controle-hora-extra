@@ -5,6 +5,8 @@ import {
   signOut, 
   GoogleAuthProvider, 
   onAuthStateChanged,
+  setPersistence,
+  browserLocalPersistence,
   User 
 } from 'firebase/auth';
 import { 
@@ -32,6 +34,13 @@ const firebaseConfig = {
 // Inicialização da instância do Firebase
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+// 1. Configurar persistência da autenticação como LOCAL (browserLocalPersistence)
+// Garante que o usuário permaneça autenticado ao fechar e reabrir o aplicativo
+setPersistence(auth, browserLocalPersistence).catch((error) => {
+  console.warn('[Firebase] Aviso ao definir browserLocalPersistence:', error);
+});
+
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
@@ -52,9 +61,14 @@ async function testConnection() {
 testConnection();
 
 /**
- * Conectar com Google usando popup
+ * Conectar com Google usando popup com persistência local garantida
  */
 export async function connectWithGoogle(): Promise<User> {
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+  } catch (err) {
+    console.warn('[Firebase] Aviso ao garantir persistência local:', err);
+  }
   const result = await signInWithPopup(auth, googleProvider);
   return result.user;
 }
