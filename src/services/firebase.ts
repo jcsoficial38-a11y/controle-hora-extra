@@ -6,6 +6,7 @@ import {
   GoogleAuthProvider, 
   onAuthStateChanged,
   setPersistence,
+  indexedDBLocalPersistence,
   browserLocalPersistence,
   User 
 } from 'firebase/auth';
@@ -16,6 +17,8 @@ import {
   getDocs, 
   writeBatch, 
   setDoc, 
+  deleteDoc,
+  onSnapshot,
   getDocFromServer 
 } from 'firebase/firestore';
 import { OvertimeRecord } from '../types/overtime';
@@ -35,10 +38,12 @@ const firebaseConfig = {
 export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// 1. Configurar persistência da autenticação como LOCAL (browserLocalPersistence)
-// Garante que o usuário permaneça autenticado ao fechar e reabrir o aplicativo
-setPersistence(auth, browserLocalPersistence).catch((error) => {
-  console.warn('[Firebase] Aviso ao definir browserLocalPersistence:', error);
+// 1. Configurar persistência da autenticação com indexedDBLocalPersistence ativa
+// Garante que o usuário permaneça conectado na nuvem mesmo após fechar e reabrir o aplicativo
+setPersistence(auth, indexedDBLocalPersistence).catch(() => {
+  setPersistence(auth, browserLocalPersistence).catch((error) => {
+    console.warn('[Firebase] Aviso ao definir persistência local:', error);
+  });
 });
 
 export const googleProvider = new GoogleAuthProvider();
@@ -61,13 +66,13 @@ async function testConnection() {
 testConnection();
 
 /**
- * Conectar com Google usando popup com persistência local garantida
+ * Conectar com Google usando popup com persistência indexedDBLocalPersistence garantida
  */
 export async function connectWithGoogle(): Promise<User> {
   try {
-    await setPersistence(auth, browserLocalPersistence);
-  } catch (err) {
-    console.warn('[Firebase] Aviso ao garantir persistência local:', err);
+    await setPersistence(auth, indexedDBLocalPersistence);
+  } catch {
+    await setPersistence(auth, browserLocalPersistence).catch(() => {});
   }
   const result = await signInWithPopup(auth, googleProvider);
   return result.user;
@@ -85,6 +90,77 @@ export async function disconnectFromFirebase(): Promise<void> {
  */
 export function onAuthUserChanged(callback: (user: User | null) => void) {
   return onAuthStateChanged(auth, callback);
+}
+
+/**
+ * Salvar um único registro em tempo real no Firestore vinculado ao UID do usuário
+ */
+export async function saveRecordToCloud(userId: string, record: OvertimeRecord): Promise<void> {
+  try {
+    const itemRef = doc(db, 'users', userId, 'overtimeRecords', record.id);
+    const payload: Record<string, any> = {
+      id: record.id,
+      userId: userId,
+      date: record.date,
+      employeeName: record.employeeName,
+      hours: Number(record.hours),
+      status: record.status,
+      createdAt: record.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    if (record.reason) payload.reason = record.reason;
+    if (record.ratePerHour !== undefined && record.ratePerHour !== null) {
+      payload.ratePerHour = Number(record.ratePerHour);
+    }
+    if (record.overtimeType) payload.overtimeType = record.overtimeType;
+
+    await setDoc(itemRef, payload, { merge: true });
+  } catch (err) {
+    console.warn('[Firebase] Erro ao salvar registro em tempo real na nuvem:', err);
+  }
+}
+
+/**
+ * Excluir um registro em tempo real no Firestore vinculado ao UID do usuário
+ */
+export async function deleteRecordFromCloud(userId: string, recordId: string): Promise<void> {
+  try {
+    const itemRef = doc(db, 'users', userId, 'overtimeRecords', recordId);
+    await deleteDoc(itemRef);
+  } catch (err) {
+    console.warn('[Firebase] Erro ao deletar registro em tempo real na nuvem:', err);
+  }
+}
+
+/**
+ * Observador em tempo real (onSnapshot) de todos os registros do usuário autenticado no Firestore
+ */
+export function subscribeToCloudRecords(
+  userId: string, 
+  onUpdate: (records: OvertimeRecord[]) => void
+): () => void {
+  const recordsColRef = collection(db, 'users', userId, 'overtimeRecords');
+  return onSnapshot(recordsColRef, (snapshot) => {
+    const records: OvertimeRecord[] = [];
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      records.push({
+        id: data.id || docSnap.id,
+        date: data.date,
+        employeeName: data.employeeName,
+        hours: Number(data.hours) || 0,
+        status: data.status === 'pago' ? 'pago' : 'pendente',
+        reason: data.reason || undefined,
+        ratePerHour: data.ratePerHour ? Number(data.ratePerHour) : undefined,
+        overtimeType: data.overtimeType || undefined,
+        createdAt: data.createdAt || new Date().toISOString()
+      });
+    });
+    records.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    onUpdate(records);
+  }, (err) => {
+    console.warn('[Firebase] Erro no listener em tempo real de registros:', err);
+  });
 }
 
 /**

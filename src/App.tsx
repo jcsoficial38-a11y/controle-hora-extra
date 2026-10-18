@@ -16,7 +16,14 @@ import { ExportModal } from './components/ExportModal';
 import { DataManagementModal } from './components/DataManagementModal';
 import { PinLockModal } from './components/PinLockModal';
 import confetti from 'canvas-confetti';
-import { auth, onAuthUserChanged, syncRecordsWithCloud } from './services/firebase';
+import { 
+  auth, 
+  onAuthUserChanged, 
+  syncRecordsWithCloud, 
+  saveRecordToCloud, 
+  deleteRecordFromCloud, 
+  subscribeToCloudRecords 
+} from './services/firebase';
 import { User as FirebaseUser } from 'firebase/auth';
 
 export default function App() {
@@ -70,6 +77,32 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
+  // 3. Listener em Tempo Real no Firestore (onSnapshot) vinculado ao UID do usuário logado
+  // Garante que todas as alterações na nuvem sejam refletidas imediatamente
+  useEffect(() => {
+    if (!cloudUser) return;
+
+    const unsubscribe = subscribeToCloudRecords(cloudUser.uid, (remoteRecords) => {
+      if (remoteRecords && remoteRecords.length > 0) {
+        setRecords(prev => {
+          const map = new Map<string, OvertimeRecord>();
+          prev.forEach(r => map.set(r.id, r));
+          remoteRecords.forEach(r => map.set(r.id, r));
+          const merged = Array.from(map.values()).sort(
+            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+          saveRecords(merged);
+          return merged;
+        });
+        const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        setLastCloudSyncTime(now);
+        localStorage.setItem('controle_hora_extra_firebase_last_sync', now);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [cloudUser]);
 
   // Inicialização do Armazenamento Durável e Proteção Persistente contra perda de dados
   useEffect(() => {

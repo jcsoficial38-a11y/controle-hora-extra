@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ManagerProfile } from '../types/overtime';
 import { COLOR_THEMES } from '../utils/theme';
 import { verifyNativeBiometrics } from '../utils/biometrics';
@@ -44,6 +44,28 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
   const [biometricErrorDetails, setBiometricErrorDetails] = useState<string>('');
 
   const themeConfig = COLOR_THEMES[profile.primaryColor] || COLOR_THEMES.blue;
+  const hasAutoTriggeredRef = useRef<boolean>(false);
+
+  // 1. GATILHO AUTOMÁTICO DE BIOMETRIA AO ABRIR:
+  // Ao carregar a tela de bloqueio/PIN, se a biometria estiver cadastrada/ativada,
+  // invoque AUTOMATICAMENTE o leitor de digital do dispositivo/navegador assim que a tela for montada (via useEffect)
+  useEffect(() => {
+    if (isOpen) {
+      setPinInput('');
+      setErrorMsg('');
+
+      const isRegistered = Boolean(profile.biometricsEnabled && profile.biometricCredentialId);
+      if (isRegistered && !hasAutoTriggeredRef.current) {
+        hasAutoTriggeredRef.current = true;
+        const timer = setTimeout(() => {
+          handleBiometricsClick();
+        }, 300);
+        return () => clearTimeout(timer);
+      }
+    } else {
+      hasAutoTriggeredRef.current = false;
+    }
+  }, [isOpen, profile.biometricsEnabled, profile.biometricCredentialId]);
 
   if (!isOpen) return null;
 
@@ -69,21 +91,28 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
     }
   };
 
+  // Tecla '⌫' (Apagar 1 a 1)
   const handleDelete = () => {
     setPinInput((prev) => prev.slice(0, -1));
+    setErrorMsg('');
+  };
+
+  // Tecla 'C' (Limpar Tudo de uma vez)
+  const handleClearAll = () => {
+    setPinInput('');
     setErrorMsg('');
   };
 
   // FLUXO ESTRITO DE SEGURANÇA DA BIOMETRIA
   // 1. O clique no botão NÃO PODE abrir o app diretamente sob nenhuma hipótese.
   // 2. Primeiro verifica se a biometria foi previamente cadastrada e ativada nas configurações.
-  // 3. Se NÃO estiver cadastrada/ativada: exibe "Cadastre a biometria nas configurações do app primeiro" e NÃO aciona a criação na tela de bloqueio.
-  // 4. Se ESTIVER cadastrada: aciona APENAS a autenticação/verificação da chave já salva (get passkey / WebAuthn get). NUNCA cria passkey aqui!
+  // 3. Se NÃO estiver cadastrada/ativada: exibe aviso e NÃO aciona a criação na tela de bloqueio.
+  // 4. Se ESTIVER cadastrada: aciona APENAS a autenticação/verificação da chave já salva (get passkey / WebAuthn get).
   // 5. O app SÓ é liberado se a leitura da digital for confirmada com SUCESSO.
   const handleBiometricsClick = () => {
     const isRegistered = Boolean(profile.biometricsEnabled && profile.biometricCredentialId);
 
-    // Regra 3: Se o usuário ainda não tiver cadastrado a biometria previamente nas configurações:
+    // Regra: Se o usuário ainda não tiver cadastrado a biometria previamente nas configurações:
     if (!isRegistered) {
       const msg = 'Biometria não cadastrada. Acesse com seu PIN e ative nas configurações do app.';
       setErrorMsg(msg);
@@ -91,7 +120,7 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
       return;
     }
 
-    // Regra 4: Se cadastrada, aciona APENAS a autenticação da chave salva (get passkey)
+    // Se cadastrada, aciona APENAS a autenticação da chave salva (get passkey)
     setErrorMsg('');
     setShowBiometricsModal(true);
     handlePerformBiometricScan();
@@ -170,14 +199,36 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
         <h3 className="text-xl font-black text-slate-900 dark:text-white">
           Acesso Protegido
         </h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          {profile.biometricsEnabled 
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-3">
+          {profile.biometricsEnabled && profile.biometricCredentialId
             ? 'Digite o PIN de 4 dígitos ou use a Biometria' 
             : 'Digite o PIN de 4 dígitos cadastrado'}
         </p>
 
+        {/* 1. Botão 'Desbloquear com Biometria / Digital' posicionado ACIMA dos círculos do PIN */}
+        <button
+          type="button"
+          onClick={handleBiometricsClick}
+          className={`w-full py-2.5 px-3 mb-2 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold transition active:scale-95 cursor-pointer shadow-xs border ${
+            profile.biometricsEnabled && profile.biometricCredentialId
+              ? 'bg-blue-50/90 hover:bg-blue-100/90 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-300 border-blue-200 dark:border-blue-900/60'
+              : 'bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+          }`}
+          title={
+            profile.biometricsEnabled && profile.biometricCredentialId
+              ? 'Desbloquear com Biometria / Digital'
+              : 'Biometria não cadastrada. Acesse com seu PIN e ative nas configurações do app.'
+          }
+        >
+          <Fingerprint className={`w-4 h-4 ${profile.biometricsEnabled && profile.biometricCredentialId ? 'text-blue-600 dark:text-blue-400 animate-pulse' : 'text-slate-400'}`} />
+          <span>Desbloquear com Biometria / Digital</span>
+          {profile.biometricsEnabled && profile.biometricCredentialId && (
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping ml-0.5" />
+          )}
+        </button>
+
         {/* 4 Dots indicator */}
-        <div className="flex items-center justify-center gap-4 my-6">
+        <div className="flex items-center justify-center gap-4 my-3">
           {[0, 1, 2, 3].map((index) => {
             const isFilled = pinInput.length > index;
             return (
@@ -195,13 +246,17 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
 
         {/* Mensagem de alerta / erro */}
         {errorMsg && (
-          <div className="text-xs font-semibold text-rose-600 dark:text-rose-400 mb-3 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 animate-shake text-left flex items-start gap-2">
+          <div className="text-xs font-semibold text-rose-600 dark:text-rose-400 mb-3 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 animate-shake text-left flex items-start gap-2 w-full">
             <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-500 mt-0.5" />
             <span>{errorMsg}</span>
           </div>
         )}
 
-        {/* Keypad */}
+        {/* 2. TECLADO NUMÉRICO SIMÉTRICO E PADRONIZADO */}
+        {/* [ 1 ] [ 2 ] [ 3 ] */}
+        {/* [ 4 ] [ 5 ] [ 6 ] */}
+        {/* [ 7 ] [ 8 ] [ 9 ] */}
+        {/* [ Tecla 'C' (Limpar Tudo) ]  [ 0 ]  [ Tecla '⌫' (Apagar 1 a 1) ] */}
         <div className="grid grid-cols-3 gap-3 w-full max-w-[260px]">
           {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
             <button
@@ -214,28 +269,17 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
             </button>
           ))}
 
-          {/* Biometrics button (bottom left) */}
+          {/* Tecla 'C' (Limpar Tudo) */}
           <button
             type="button"
-            onClick={handleBiometricsClick}
-            className={`h-14 rounded-2xl relative flex items-center justify-center transition active:scale-95 cursor-pointer shadow-xs ${
-              profile.biometricsEnabled
-                ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-blue-600 dark:text-blue-400 ring-2 ring-blue-500/20'
-                : 'bg-slate-100/70 hover:bg-slate-200/80 dark:bg-slate-800/60 dark:hover:bg-slate-700/70 text-slate-400 dark:text-slate-500'
-            }`}
-            title={profile.biometricsEnabled ? 'Acessar com Biometria / Face ID' : 'Biometria não cadastrada. Acesse com seu PIN e ative nas configurações do app.'}
+            onClick={handleClearAll}
+            className="h-14 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-rose-600 dark:text-rose-400 text-lg font-black flex items-center justify-center transition active:scale-95 cursor-pointer shadow-xs"
+            title="Limpar todo o PIN"
           >
-            <Fingerprint className={`w-6 h-6 ${profile.biometricsEnabled ? themeConfig.textColor : 'text-slate-400 dark:text-slate-500'}`} />
-            
-            {/* Indicador visual de status da biometria */}
-            {!profile.biometricsEnabled ? (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600" title="Não cadastrada" />
-            ) : (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Ativada" />
-            )}
+            C
           </button>
 
-          {/* Digit 0 */}
+          {/* Tecla '0' */}
           <button
             type="button"
             onClick={() => handleDigit('0')}
@@ -244,14 +288,14 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
             0
           </button>
 
-          {/* Delete button (bottom right) */}
+          {/* Tecla '⌫' (Apagar 1 a 1) */}
           <button
             type="button"
             onClick={handleDelete}
-            className="h-14 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition active:scale-95 cursor-pointer"
+            className="h-14 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xl font-bold flex items-center justify-center transition active:scale-95 cursor-pointer shadow-xs"
             title="Apagar dígito"
           >
-            <Delete className="w-5 h-5" />
+            ⌫
           </button>
         </div>
 
