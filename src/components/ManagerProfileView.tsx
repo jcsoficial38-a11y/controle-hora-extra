@@ -7,7 +7,8 @@ import {
   connectWithGoogle, 
   disconnectFromFirebase, 
   onAuthUserChanged, 
-  syncRecordsWithCloud 
+  syncRecordsWithCloud,
+  saveProfileToCloud 
 } from '../services/firebase';
 import { User as FirebaseUser } from 'firebase/auth';
 import { 
@@ -61,6 +62,8 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
 }) => {
   const [formData, setFormData] = useState<ManagerProfile>({ ...profile });
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [personalSavedSuccess, setPersonalSavedSuccess] = useState(false);
+  const [securitySavedSuccess, setSecuritySavedSuccess] = useState(false);
   const [pinError, setPinError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -346,6 +349,65 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
   };
 
+  // Salvar Informações Pessoais (Nome Completo, E-mail, Empresa, Cargo, Foto)
+  const handleSavePersonalInfo = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!formData.name.trim()) {
+      alert('Por favor, informe seu nome completo.');
+      return;
+    }
+    const updated: ManagerProfile = {
+      ...profile,
+      name: formData.name.trim(),
+      email: formData.email.trim(),
+      company: formData.company?.trim() || '',
+      roleTitle: formData.roleTitle?.trim() || '',
+      avatarUrl: formData.avatarUrl || '',
+    };
+    setFormData(updated);
+    onUpdateProfile(updated);
+    if (authUser) {
+      saveProfileToCloud(authUser.uid, updated);
+    }
+    setPersonalSavedSuccess(true);
+    setTimeout(() => setPersonalSavedSuccess(false), 3500);
+  };
+
+  // Salvar Configurações de Segurança (PIN de 4 dígitos, Biometria, Pergunta Secreta)
+  const handleSaveSecuritySettings = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setPinError('');
+
+    if (formData.pinEnabled) {
+      if (!formData.pinCode || formData.pinCode.length !== 4 || !/^\d{4}$/.test(formData.pinCode)) {
+        setPinError('O PIN deve conter exatamente 4 dígitos numéricos.');
+        return;
+      }
+      if (!formData.securityAnswer?.trim()) {
+        setPinError('Por favor, informe uma resposta de segurança para recuperação do PIN.');
+        return;
+      }
+    }
+
+    const updated: ManagerProfile = {
+      ...profile,
+      pinEnabled: formData.pinEnabled,
+      pinCode: formData.pinCode,
+      biometricsEnabled: formData.biometricsEnabled,
+      biometricCredentialId: formData.biometricCredentialId,
+      biometricsRegisteredAt: formData.biometricsRegisteredAt,
+      securityQuestion: formData.securityQuestion,
+      securityAnswer: formData.securityAnswer,
+    };
+    setFormData(updated);
+    onUpdateProfile(updated);
+    if (authUser) {
+      saveProfileToCloud(authUser.uid, updated);
+    }
+    setSecuritySavedSuccess(true);
+    setTimeout(() => setSecuritySavedSuccess(false), 3500);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -362,6 +424,9 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
 
     setPinError('');
     onUpdateProfile(formData);
+    if (authUser) {
+      saveProfileToCloud(authUser.uid, formData);
+    }
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
   };
@@ -397,27 +462,62 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
         
         {/* Card 1: Informações Pessoais & Avatar */}
         <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-6">
-          <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-            <User className={`w-4 h-4 ${activeThemeConfig.textColor}`} />
-            <span>Identificação do Gestor</span>
-          </h2>
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <User className={`w-4 h-4 ${activeThemeConfig.textColor}`} />
+              <span>Identificação do Gestor</span>
+            </h2>
+            {personalSavedSuccess && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 animate-fade-in">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Salvo com sucesso!</span>
+              </span>
+            )}
+          </div>
 
-          <div className="flex flex-col sm:flex-row items-center gap-6">
-            {/* Avatar Uploader */}
-            <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-              <div className="w-24 h-24 rounded-3xl overflow-hidden bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-slate-300 dark:border-slate-700 flex items-center justify-center text-slate-400 group-hover:border-blue-500 transition shadow-inner">
+          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+            {/* Avatar e Botões Explícitos (Enviar Foto e Remover) */}
+            <div className="flex flex-col items-center gap-3 shrink-0">
+              <div 
+                className="w-24 h-24 rounded-3xl overflow-hidden bg-slate-100 dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400 shadow-inner group relative cursor-pointer"
+                onClick={() => fileInputRef.current?.click()}
+                title="Clique para selecionar uma foto"
+              >
                 {formData.avatarUrl ? (
                   <img src={formData.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                 ) : (
                   <div className="flex flex-col items-center justify-center text-center p-2">
-                    <User className="w-8 h-8 text-slate-400 mb-1" />
-                    <span className="text-[10px] font-bold">Foto</span>
+                    <User className="w-9 h-9 text-slate-400 mb-0.5" />
+                    <span className="text-[10px] font-bold text-slate-400">Sem Foto</span>
                   </div>
                 )}
+                <div className="absolute inset-0 bg-black/40 rounded-3xl opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition">
+                  <Camera className="w-6 h-6" />
+                </div>
               </div>
-              <div className="absolute inset-0 bg-black/40 rounded-3xl opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition">
-                <Camera className="w-6 h-6" />
+
+              {/* Botões explícitos abaixo da Foto de Perfil */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-xs cursor-pointer transition active:scale-95"
+                >
+                  Enviar Foto
+                </button>
+                {formData.avatarUrl && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormData(prev => ({ ...prev, avatarUrl: '' }));
+                    }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40 cursor-pointer transition active:scale-95"
+                  >
+                    Remover
+                  </button>
+                )}
               </div>
+
               <input
                 type="file"
                 ref={fileInputRef}
@@ -431,7 +531,7 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 w-full">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Nome Completo
+                  Nome Completo *
                 </label>
                 <div className="relative">
                   <input
@@ -439,16 +539,16 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     placeholder="Ex: Carlos Silva"
-                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm focus:outline-none"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm focus:outline-none"
                     required
                   />
-                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <User className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                  E-mail do Gestor
+                  E-mail / Login *
                 </label>
                 <div className="relative">
                   <input
@@ -456,10 +556,10 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="gestor@empresa.com"
-                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm focus:outline-none"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm focus:outline-none"
                     required
                   />
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                 </div>
               </div>
 
@@ -473,9 +573,9 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
                     value={formData.company || ''}
                     onChange={(e) => setFormData({ ...formData, company: e.target.value })}
                     placeholder="Ex: Minha Empresa Ltda"
-                    className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm focus:outline-none"
+                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm focus:outline-none"
                   />
-                  <Building className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <Building className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                 </div>
               </div>
 
@@ -488,10 +588,25 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
                   value={formData.roleTitle || ''}
                   onChange={(e) => setFormData({ ...formData, roleTitle: e.target.value })}
                   placeholder="Ex: Supervisor de Operações"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm focus:outline-none"
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white text-sm focus:outline-none"
                 />
               </div>
             </div>
+          </div>
+
+          {/* Botão Salvar Alterações para o Perfil */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Os dados salvos aqui possuem prioridade total e nunca serão sobrescritos por apelidos genéricos do Google.
+            </p>
+            <button
+              type="button"
+              onClick={handleSavePersonalInfo}
+              className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-md transition cursor-pointer active:scale-95 shrink-0 ${activeThemeConfig.bgButton}`}
+            >
+              <Save className="w-4 h-4" />
+              <span>Salvar Alterações</span>
+            </button>
           </div>
         </div>
 
@@ -712,10 +827,50 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
                   {pinError}
                 </div>
               )}
+
+              {/* Botão Salvar Senha/PIN */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                {securitySavedSuccess ? (
+                  <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Configurações de segurança e PIN salvas com sucesso!</span>
+                  </div>
+                ) : (
+                  <span className="text-[11px] text-slate-400">
+                    {formData.pinEnabled ? 'O PIN e a biometria serão exigidos obrigatoriamente ao abrir o app.' : 'O aplicativo abrirá diretamente sem solicitar PIN.'}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSaveSecuritySettings}
+                  className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-md transition cursor-pointer active:scale-95 shrink-0 ${activeThemeConfig.bgButton}`}
+                >
+                  <Lock className="w-4 h-4" />
+                  <span>Salvar Senha/PIN</span>
+                </button>
+              </div>
             </div>
           ) : (
-            <div className="text-xs text-slate-500 dark:text-slate-400 py-2">
-              O aplicativo abrirá diretamente sem solicitar senha ao entrar. Para proteger o acesso aos lançamentos, ative a chave acima.
+            <div className="space-y-4 pt-1">
+              <div className="text-xs text-slate-500 dark:text-slate-400 py-1">
+                O aplicativo abrirá diretamente sem solicitar senha ao entrar. Para proteger o acesso aos lançamentos, ative o switch de segurança acima e defina seu PIN.
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+                {securitySavedSuccess ? (
+                  <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Preferência salva!</span>
+                  </div>
+                ) : <span className="text-[11px] text-slate-400">Proteção por PIN atualmente desativada.</span>}
+                <button
+                  type="button"
+                  onClick={handleSaveSecuritySettings}
+                  className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white shadow-md transition cursor-pointer active:scale-95 shrink-0 ${activeThemeConfig.bgButton}`}
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Salvar Preferência</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

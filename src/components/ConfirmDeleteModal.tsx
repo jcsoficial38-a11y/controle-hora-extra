@@ -56,7 +56,7 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
         </h3>
 
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5">
-          O registro será removido permanentemente do banco de dados e os totais serão recalculados.
+          O registro será movido para a <strong>Lixeira Local</strong> na memória do aparelho, de onde poderá ser visualizado ou restaurado.
         </p>
 
         {/* Detalhes do registro a ser excluído */}

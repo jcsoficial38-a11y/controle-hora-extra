@@ -21,7 +21,8 @@ import {
   onSnapshot,
   getDocFromServer 
 } from 'firebase/firestore';
-import { OvertimeRecord } from '../types/overtime';
+import { OvertimeRecord, ManagerProfile } from '../types/overtime';
+import { getDeletedRecordIds } from '../utils/storage';
 import firebaseAppletConfig from '../../firebase-applet-config.json';
 
 // Bloco de configuração do Firebase com fallback inteligente para os dados provisionados
@@ -142,7 +143,12 @@ export function subscribeToCloudRecords(
   const recordsColRef = collection(db, 'users', userId, 'overtimeRecords');
   return onSnapshot(recordsColRef, (snapshot) => {
     const records: OvertimeRecord[] = [];
+    const deletedIds = getDeletedRecordIds();
     snapshot.forEach((docSnap) => {
+      if (deletedIds.has(docSnap.id)) {
+        deleteDoc(docSnap.ref).catch(() => {});
+        return;
+      }
       const data = docSnap.data();
       records.push({
         id: data.id || docSnap.id,
@@ -164,32 +170,110 @@ export function subscribeToCloudRecords(
 }
 
 /**
+ * Salvar perfil do gestor no Firestore preservando prioridade total
+ */
+export async function saveProfileToCloud(userId: string, profile: ManagerProfile): Promise<void> {
+  try {
+    const userDocRef = doc(db, 'users', userId);
+    await setDoc(userDocRef, {
+      userId,
+      name: profile.name,
+      email: profile.email,
+      company: profile.company || '',
+      roleTitle: profile.roleTitle || '',
+      avatarUrl: profile.avatarUrl || '',
+      theme: profile.theme,
+      primaryColor: profile.primaryColor,
+      pinEnabled: profile.pinEnabled,
+      biometricsEnabled: profile.biometricsEnabled,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.warn('[Firebase] Erro ao salvar perfil no Firestore:', err);
+  }
+}
+
+/**
+ * Carregar perfil do gestor a partir do Firestore
+ */
+export async function loadProfileFromCloud(userId: string): Promise<Partial<ManagerProfile> | null> {
+  try {
+    const userDocRef = doc(db, 'users', userId);
+    const snap = await getDocFromServer(userDocRef).catch(() => null);
+    if (snap && snap.exists()) {
+      const data = snap.data();
+      return {
+        name: data.name || undefined,
+        email: data.email || undefined,
+        company: data.company || undefined,
+        roleTitle: data.roleTitle || undefined,
+        avatarUrl: data.avatarUrl || undefined,
+        theme: data.theme || undefined,
+        primaryColor: data.primaryColor || undefined,
+        pinEnabled: data.pinEnabled !== undefined ? data.pinEnabled : undefined,
+        biometricsEnabled: data.biometricsEnabled !== undefined ? data.biometricsEnabled : undefined,
+      };
+    }
+  } catch (err) {
+    console.warn('[Firebase] Erro ao carregar perfil do Firestore:', err);
+  }
+  return null;
+}
+
+/**
  * Sincronização bidirecional resiliente:
  * - Salva todos os registros locais no Firestore do usuário autenticado (/users/{userId}/overtimeRecords)
  * - Busca registros existentes no Firestore para mesclar sem duplicações e sem perdas
+ * - Respeita lixeira e exclusões definitivas (NUNCA recria itens apagados)
  * - Atualiza carimbo de data/hora do perfil na nuvem
  */
 export async function syncRecordsWithCloud(
   user: User,
-  localRecords: OvertimeRecord[]
+  localRecords: OvertimeRecord[],
+  localProfile?: ManagerProfile
 ): Promise<{ success: boolean; syncedCount: number; mergedRecords: OvertimeRecord[]; lastSync: string; error?: string }> {
   try {
     const userId = user.uid;
     const userDocRef = doc(db, 'users', userId);
     const recordsColRef = collection(db, 'users', userId, 'overtimeRecords');
 
-    // 1. Atualizar ou registrar perfil do gestor
-    await setDoc(userDocRef, {
+    // 1. Atualizar ou registrar perfil mantendo prioridade para os dados do usuário
+    const profilePayload: Record<string, any> = {
       userId: userId,
-      name: user.displayName || 'Gestor',
-      email: user.email || '',
       lastSyncedAt: new Date().toISOString()
-    }, { merge: true });
+    };
 
-    // 2. Buscar registros existentes na nuvem
+    if (localProfile) {
+      if (localProfile.name && localProfile.name !== 'Gestor(a)') {
+        profilePayload.name = localProfile.name;
+      }
+      if (localProfile.email) {
+        profilePayload.email = localProfile.email;
+      }
+      if (localProfile.avatarUrl) {
+        profilePayload.avatarUrl = localProfile.avatarUrl;
+      }
+    } else {
+      // Fallback do Google apenas se não houver dados locais
+      profilePayload.name = user.displayName || 'Gestor(a)';
+      profilePayload.email = user.email || '';
+      if (user.photoURL) profilePayload.avatarUrl = user.photoURL;
+    }
+
+    await setDoc(userDocRef, profilePayload, { merge: true });
+
+    // 2. Buscar registros existentes na nuvem e expurgar excluídos
     const snapshot = await getDocs(recordsColRef);
     const remoteRecordsMap = new Map<string, OvertimeRecord>();
-    snapshot.forEach(docSnap => {
+    const deletedIds = getDeletedRecordIds();
+
+    for (const docSnap of snapshot.docs) {
+      // Se foi excluído pelo usuário, remove do Firestore e NÃO o adiciona
+      if (deletedIds.has(docSnap.id)) {
+        deleteDoc(docSnap.ref).catch(() => {});
+        continue;
+      }
+
       const data = docSnap.data();
       remoteRecordsMap.set(docSnap.id, {
         id: data.id || docSnap.id,
@@ -202,17 +286,21 @@ export async function syncRecordsWithCloud(
         overtimeType: data.overtimeType || undefined,
         createdAt: data.createdAt || new Date().toISOString()
       });
-    });
+    }
 
-    // 3. Mesclar registros locais com remotos (preservando tudo de forma cumulativa)
+    // 3. Mesclar registros locais com remotos (preservando tudo de forma cumulativa sem os excluídos)
     const mergedMap = new Map<string, OvertimeRecord>();
     // Primeiro adiciona remotos
     remoteRecordsMap.forEach((rec, id) => {
-      mergedMap.set(id, rec);
+      if (!deletedIds.has(id)) {
+        mergedMap.set(id, rec);
+      }
     });
     // Depois aplica locais (atualizações mais recentes)
     localRecords.forEach((rec) => {
-      mergedMap.set(rec.id, rec);
+      if (!deletedIds.has(rec.id)) {
+        mergedMap.set(rec.id, rec);
+      }
     });
 
     const finalRecords = Array.from(mergedMap.values()).sort((a, b) => 

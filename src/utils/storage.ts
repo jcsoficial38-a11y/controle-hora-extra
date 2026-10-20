@@ -22,6 +22,12 @@ export const BACKUP_VAULT_KEY = 'controle_hora_extra_vault_backup_v1';
 export const PROFILE_BACKUP_KEY = 'controle_hora_extra_profile_backup_v1';
 export const APP_INITIALIZED_KEY = 'controle_hora_extra_initialized_flag';
 export const PRE_RESET_BACKUP_KEY = 'controle_hora_extra_pre_reset_backup_v1';
+export const TRASH_STORAGE_KEY = 'controle_hora_extra_trash_v1';
+export const DELETED_RECORDS_META_KEY = 'controle_hora_extra_deleted_ids_v1';
+
+export interface TrashRecord extends OvertimeRecord {
+  deletedAt: string;
+}
 
 // Chaves legadas para compatibilidade retroativa
 const LEGACY_RECORD_KEYS = [
@@ -768,4 +774,103 @@ export function formatDateBr(dateString: string): string {
 export function formatCurrency(value?: number): string {
   if (value === undefined || isNaN(value)) return 'R$ 0,00';
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+// ==========================================
+// LIXEIRA LOCAL E PROTEÇÃO CONTRA EXCLUSÕES
+// ==========================================
+
+export function loadTrashRecords(): TrashRecord[] {
+  try {
+    const raw = localStorage.getItem(TRASH_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveTrashRecords(trash: TrashRecord[]): void {
+  try {
+    localStorage.setItem(TRASH_STORAGE_KEY, JSON.stringify(trash));
+  } catch (err) {
+    console.warn('[Storage] Erro ao salvar lixeira:', err);
+  }
+}
+
+/**
+ * Move um registro para a Lixeira Local na memória do aparelho
+ */
+export function moveToTrash(record: OvertimeRecord): TrashRecord[] {
+  const currentTrash = loadTrashRecords();
+  const trashItem: TrashRecord = {
+    ...record,
+    deletedAt: new Date().toISOString(),
+  };
+  const updatedTrash = [trashItem, ...currentTrash.filter(t => t.id !== record.id)];
+  saveTrashRecords(updatedTrash);
+  recordDeletedId(record.id);
+  return updatedTrash;
+}
+
+/**
+ * Restaura um registro da Lixeira Local
+ */
+export function restoreFromTrash(recordId: string): { restored: OvertimeRecord | null; remainingTrash: TrashRecord[] } {
+  const currentTrash = loadTrashRecords();
+  const item = currentTrash.find(t => t.id === recordId);
+  const remainingTrash = currentTrash.filter(t => t.id !== recordId);
+  saveTrashRecords(remainingTrash);
+  unrecordDeletedId(recordId);
+
+  if (item) {
+    const { deletedAt, ...restoredRecord } = item;
+    return { restored: restoredRecord, remainingTrash };
+  }
+  return { restored: null, remainingTrash };
+}
+
+/**
+ * Exclui definitivamente da lixeira
+ */
+export function deletePermanentlyFromTrash(recordId: string): TrashRecord[] {
+  const currentTrash = loadTrashRecords();
+  const remainingTrash = currentTrash.filter(t => t.id !== recordId);
+  saveTrashRecords(remainingTrash);
+  recordDeletedId(recordId);
+  return remainingTrash;
+}
+
+/**
+ * Esvazia toda a lixeira local
+ */
+export function emptyTrash(): void {
+  saveTrashRecords([]);
+}
+
+/**
+ * Conjunto de IDs excluídos para NUNCA permitir que o Firestore ressuscite registros apagados
+ */
+export function getDeletedRecordIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DELETED_RECORDS_META_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function recordDeletedId(id: string): void {
+  const set = getDeletedRecordIds();
+  set.add(id);
+  localStorage.setItem(DELETED_RECORDS_META_KEY, JSON.stringify(Array.from(set)));
+}
+
+export function unrecordDeletedId(id: string): void {
+  const set = getDeletedRecordIds();
+  set.delete(id);
+  localStorage.setItem(DELETED_RECORDS_META_KEY, JSON.stringify(Array.from(set)));
 }

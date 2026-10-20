@@ -6,7 +6,8 @@ import {
   User,
   Sun,
   Moon,
-  Database
+  Database,
+  Trash2
 } from 'lucide-react';
 import { ManagerProfile } from '../types/overtime';
 import { COLOR_THEMES } from '../utils/theme';
@@ -24,6 +25,8 @@ interface HeaderProps {
   onToggleTheme: () => void;
   cloudUser?: FirebaseUser | null;
   isCloudSyncing?: boolean;
+  onOpenTrashModal?: () => void;
+  trashCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -36,6 +39,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleTheme,
   cloudUser,
   isCloudSyncing,
+  onOpenTrashModal,
+  trashCount = 0,
 }) => {
   const themeConfig = COLOR_THEMES[profile.primaryColor] || COLOR_THEMES.blue;
 
@@ -148,6 +153,23 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Database className="w-4 h-4" />
             </button>
+
+            {/* Lixeira Local */}
+            {onOpenTrashModal && (
+              <button
+                onClick={onOpenTrashModal}
+                type="button"
+                className="relative p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                title={`Lixeira Local (${trashCount} itens)`}
+              >
+                <Trash2 className="w-4 h-4" />
+                {trashCount > 0 && (
+                  <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white shadow-xs">
+                    {trashCount}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* BOTÃO DESTACADO: Gerar Relatório (Semanal e Mensal) */}
             <button

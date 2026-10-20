@@ -22,6 +22,7 @@ interface PinLockModalProps {
   onSuccess: () => void;
   profile: ManagerProfile;
   onResetPinWithSecurityAnswer?: () => void;
+  isMandatory?: boolean;
 }
 
 export const PinLockModal: React.FC<PinLockModalProps> = ({
@@ -30,6 +31,7 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
   onSuccess,
   profile,
   onResetPinWithSecurityAnswer,
+  isMandatory = false,
 }) => {
   const [pinInput, setPinInput] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string>('');
@@ -182,14 +184,17 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fade-in select-none">
       <div className="w-full max-w-xs sm:max-w-sm bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col items-center text-center relative">
         
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          type="button"
-          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        {/* Close Button (Ocultado em bloqueio obrigatório de abertura) */}
+        {!isMandatory && (
+          <button
+            onClick={onClose}
+            type="button"
+            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+            title="Fechar"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
 
         {/* Lock Icon Badge */}
         <div className={`w-16 h-16 rounded-2xl ${themeConfig.lightBg} flex items-center justify-center mb-3 shadow-inner`}>

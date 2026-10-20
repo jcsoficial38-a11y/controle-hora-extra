@@ -1,11 +1,18 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { OvertimeRecord, OvertimeStatus, ManagerProfile, AppTheme } from './types/overtime';
-import { loadRecords, saveRecords, loadManagerProfile, saveManagerProfile, initDurableStorage } from './utils/storage';
+import { 
+  loadRecords, 
+  saveRecords, 
+  loadManagerProfile, 
+  saveManagerProfile, 
+  initDurableStorage,
+  loadTrashRecords,
+  moveToTrash,
+  restoreFromTrash,
+  deletePermanentlyFromTrash,
+  emptyTrash,
+  TrashRecord
+} from './utils/storage';
 import { SplashScreen } from './components/SplashScreen';
 import { Header, ActiveTab } from './components/Header';
 import { OvertimeList } from './components/OvertimeList';
@@ -15,6 +22,8 @@ import { OvertimeFormModal } from './components/OvertimeFormModal';
 import { ExportModal } from './components/ExportModal';
 import { DataManagementModal } from './components/DataManagementModal';
 import { PinLockModal } from './components/PinLockModal';
+import { TrashModal } from './components/TrashModal';
+import { Lock } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { 
   auth, 
@@ -22,15 +31,27 @@ import {
   syncRecordsWithCloud, 
   saveRecordToCloud, 
   deleteRecordFromCloud, 
-  subscribeToCloudRecords 
+  subscribeToCloudRecords,
+  loadProfileFromCloud,
+  saveProfileToCloud
 } from './services/firebase';
 import { User as FirebaseUser } from 'firebase/auth';
 
 export default function App() {
   const [records, setRecords] = useState<OvertimeRecord[]>(() => loadRecords());
   const [profile, setProfile] = useState<ManagerProfile>(() => loadManagerProfile());
+  const [trashRecords, setTrashRecords] = useState<TrashRecord[]>(() => loadTrashRecords());
+
+  // 1. Verificação imediata de bloqueio por PIN / Biometria ao abrir ou recarregar
+  const isSecurityConfigured = Boolean(
+    (profile.pinEnabled && profile.pinCode) ||
+    (profile.biometricsEnabled && profile.biometricCredentialId)
+  );
+
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(() => !isSecurityConfigured);
   const [showSplash, setShowSplash] = useState<boolean>(true);
-  const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
+  const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(() => isSecurityConfigured);
+  const [isTrashModalOpen, setIsTrashModalOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('lancamentos');
 
   // Modal states
@@ -47,18 +68,37 @@ export default function App() {
     return localStorage.getItem('controle_hora_extra_firebase_last_sync') || null;
   });
 
-  // 2. Observador onAuthStateChanged(auth, (user) => { ... }) no carregamento da página
-  // Verifica automaticamente se já existe um usuário logado e salvo na sessão local
+  // 2. Observador onAuthStateChanged no carregamento da página
+  // Verifica automaticamente se já existe um usuário logado e restaura dados sem sobrescrever perfil personalizado
   useEffect(() => {
     const unsubscribe = onAuthUserChanged(async (user) => {
       setCloudUser(user);
       if (user) {
-        console.log('[Firebase] Usuário restaurado da sessão persistida:', user.email);
+        console.log('[Firebase] Usuário autenticado na nuvem:', user.email);
         setIsCloudSyncing(true);
         try {
-          // 3. Reconectar e ativar a sincronização com o Firestore de forma automática
+          // Carrega perfil na nuvem com prioridade total para os dados do usuário
+          const cloudProf = await loadProfileFromCloud(user.uid);
+          if (cloudProf) {
+            setProfile(prev => {
+              const merged: ManagerProfile = {
+                ...prev,
+                name: prev.name && prev.name !== 'Gestor(a)' ? prev.name : (cloudProf.name || user.displayName || prev.name),
+                email: prev.email && prev.email !== 'gestor@empresa.com' ? prev.email : (cloudProf.email || user.email || prev.email),
+                avatarUrl: prev.avatarUrl || cloudProf.avatarUrl || user.photoURL || '',
+                company: prev.company || cloudProf.company || '',
+                roleTitle: prev.roleTitle || cloudProf.roleTitle || '',
+                theme: cloudProf.theme || prev.theme,
+                primaryColor: cloudProf.primaryColor || prev.primaryColor,
+              };
+              saveManagerProfile(merged);
+              return merged;
+            });
+          }
+
+          // Sincroniza lançamentos respeitando a lixeira local e exclusões
           const currentRecords = loadRecords();
-          const syncRes = await syncRecordsWithCloud(user, currentRecords);
+          const syncRes = await syncRecordsWithCloud(user, currentRecords, profile);
           if (syncRes.success) {
             if (syncRes.mergedRecords && syncRes.mergedRecords.length > 0) {
               setRecords(syncRes.mergedRecords);
@@ -163,7 +203,7 @@ export default function App() {
 
   // Handle entering app from Splash Screen
   const handleEnterFromSplash = () => {
-    if (profile.pinEnabled && profile.pinCode) {
+    if (isSecurityConfigured && !isUnlocked) {
       setIsPinModalOpen(true);
     } else {
       setShowSplash(false);
@@ -171,6 +211,7 @@ export default function App() {
   };
 
   const handlePinSuccess = () => {
+    setIsUnlocked(true);
     setIsPinModalOpen(false);
     setShowSplash(false);
   };
@@ -215,13 +256,52 @@ export default function App() {
     }
   };
 
+  // Exclusão com envio imediato para a Lixeira Local e remoção no Firestore
   const handleDeleteRecord = (id: string) => {
+    const toDelete = records.find(r => r.id === id);
+    if (toDelete) {
+      const updatedTrash = moveToTrash(toDelete);
+      setTrashRecords(updatedTrash);
+    }
     setRecords(prev => {
       const updated = prev.filter(r => r.id !== id);
       saveRecords(updated);
       syncWithCloudIfLoggedIn(updated);
       return updated;
     });
+    if (cloudUser) {
+      deleteRecordFromCloud(cloudUser.uid, id).catch((e) => console.warn('[Firebase] Erro ao deletar no Firestore:', e));
+    }
+  };
+
+  // Gerenciamento da Lixeira Local (Restauração e Esvaziamento)
+  const handleRestoreFromTrash = (recordId: string) => {
+    const { restored, remainingTrash } = restoreFromTrash(recordId);
+    setTrashRecords(remainingTrash);
+    if (restored) {
+      setRecords(prev => {
+        const updated = [restored, ...prev.filter(r => r.id !== recordId)];
+        saveRecords(updated);
+        syncWithCloudIfLoggedIn(updated);
+        return updated;
+      });
+      if (cloudUser) {
+        saveRecordToCloud(cloudUser.uid, restored);
+      }
+    }
+  };
+
+  const handleDeletePermanentlyFromTrash = (recordId: string) => {
+    const remainingTrash = deletePermanentlyFromTrash(recordId);
+    setTrashRecords(remainingTrash);
+    if (cloudUser) {
+      deleteRecordFromCloud(cloudUser.uid, recordId);
+    }
+  };
+
+  const handleEmptyAllTrash = () => {
+    emptyTrash();
+    setTrashRecords([]);
   };
 
   const handleToggleStatus = (id: string) => {
@@ -259,6 +339,25 @@ export default function App() {
           onEnter={handleEnterFromSplash}
           profile={profile}
         />
+      ) : !isUnlocked ? (
+        /* Tela de Bloqueio Obrigatório quando a Splash é fechada sem passar pela autenticação */
+        <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-6 animate-fade-in">
+          <div className="text-center space-y-4 max-w-sm bg-slate-800/80 p-8 rounded-3xl border border-slate-700 shadow-2xl">
+            <div className="w-16 h-16 mx-auto rounded-3xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/30">
+              <Lock className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-black">Acesso Bloqueado</h2>
+            <p className="text-xs text-slate-400">
+              O aplicativo está configurado com segurança. Autentique-se com sua biometria ou PIN para acessar os dados.
+            </p>
+            <button
+              onClick={() => setIsPinModalOpen(true)}
+              className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg transition active:scale-95 cursor-pointer"
+            >
+              Desbloquear com Biometria / PIN
+            </button>
+          </div>
+        </div>
       ) : (
         /* MAIN APPLICATION VIEW */
         <div className="flex-1 flex flex-col">
@@ -273,6 +372,8 @@ export default function App() {
             onToggleTheme={handleToggleTheme}
             cloudUser={cloudUser}
             isCloudSyncing={isCloudSyncing}
+            onOpenTrashModal={() => setIsTrashModalOpen(true)}
+            trashCount={trashRecords.length}
           />
 
           {/* Main Content Area */}
@@ -331,6 +432,13 @@ export default function App() {
               </div>
               <div className="flex items-center gap-4">
                 <button
+                  onClick={() => setIsTrashModalOpen(true)}
+                  className="hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer"
+                  title="Visualizar itens excluídos"
+                >
+                  Lixeira ({trashRecords.length})
+                </button>
+                <button
                   onClick={() => setIsDataModalOpen(true)}
                   className="hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
                 >
@@ -357,12 +465,34 @@ export default function App() {
       {/* MODAL: Bloqueio por PIN de 4 Dígitos & Biometria (Com Esqueci Minha Senha) */}
       <PinLockModal
         isOpen={isPinModalOpen}
-        onClose={() => setIsPinModalOpen(false)}
+        onClose={() => {
+          if (!isSecurityConfigured || isUnlocked) {
+            setIsPinModalOpen(false);
+          }
+        }}
         onSuccess={handlePinSuccess}
         profile={profile}
+        isMandatory={!isUnlocked}
         onResetPinWithSecurityAnswer={() => {
-          setProfile(prev => ({ ...prev, pinEnabled: false, pinCode: '' }));
+          setProfile(prev => {
+            const upd = { ...prev, pinEnabled: false, pinCode: '', biometricsEnabled: false };
+            saveManagerProfile(upd);
+            return upd;
+          });
+          setIsUnlocked(true);
+          setIsPinModalOpen(false);
+          setShowSplash(false);
         }}
+      />
+
+      {/* MODAL: Lixeira Local */}
+      <TrashModal
+        isOpen={isTrashModalOpen}
+        onClose={() => setIsTrashModalOpen(false)}
+        trashRecords={trashRecords}
+        onRestore={handleRestoreFromTrash}
+        onDeletePermanently={handleDeletePermanentlyFromTrash}
+        onEmptyTrash={handleEmptyAllTrash}
       />
 
       {/* MODAL: Formulário de Lançamento */}
