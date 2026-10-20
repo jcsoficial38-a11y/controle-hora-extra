@@ -103,35 +103,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </nav>
 
-          {/* Right Action: Clean Perfil & Configurações shortcut */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveTab('perfil')}
-              type="button"
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-2xl border transition cursor-pointer active:scale-95 ${
-                activeTab === 'perfil'
-                  ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 border-blue-200 dark:border-blue-900/60 font-bold shadow-xs'
-                  : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
-              }`}
-              title="Acessar Perfil & Configurações"
-            >
-              <div className="relative flex items-center justify-center">
-                {profile.avatarUrl ? (
-                  <img src={profile.avatarUrl} alt="Avatar" className="w-6 h-6 rounded-full object-cover" />
-                ) : (
-                  <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400">
-                    <User className="w-3.5 h-3.5" />
-                  </div>
-                )}
-                {cloudUser && (
-                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
-                )}
-              </div>
-              <span className="text-xs font-semibold hidden sm:inline max-w-[130px] truncate">
-                {profile.name || 'Configurações'}
-              </span>
-            </button>
-          </div>
+
 
         </div>
 
