@@ -365,15 +365,9 @@ export default function App() {
           <Header
             activeTab={activeTab}
             setActiveTab={setActiveTab}
-            onOpenReportModal={() => setIsExportModalOpen(true)}
-            onOpenDataModal={() => setIsDataModalOpen(true)}
             onBackToSplash={() => setShowSplash(true)}
             profile={profile}
-            onToggleTheme={handleToggleTheme}
             cloudUser={cloudUser}
-            isCloudSyncing={isCloudSyncing}
-            onOpenTrashModal={() => setIsTrashModalOpen(true)}
-            trashCount={trashRecords.length}
           />
 
           {/* Main Content Area */}
@@ -407,7 +401,7 @@ export default function App() {
               />
             )}
 
-            {/* 4. ABA PERFIL DO GESTOR & SEGURANÇA */}
+            {/* 4. ABA PERFIL DO GESTOR & SEGURANÇA (MENU EXPANSÍVEL / ACCORDION) */}
             {activeTab === 'perfil' && (
               <ManagerProfileView
                 profile={profile}
@@ -417,6 +411,13 @@ export default function App() {
                 cloudUser={cloudUser}
                 isCloudSyncing={isCloudSyncing}
                 lastCloudSync={lastCloudSyncTime}
+                trashRecords={trashRecords}
+                onRestoreFromTrash={handleRestoreFromTrash}
+                onDeletePermanentlyFromTrash={handleDeletePermanentlyFromTrash}
+                onEmptyAllTrash={handleEmptyAllTrash}
+                onOpenReportModal={() => setIsExportModalOpen(true)}
+                onOpenDataModal={() => setIsDataModalOpen(true)}
+                onToggleTheme={handleToggleTheme}
               />
             )}
 

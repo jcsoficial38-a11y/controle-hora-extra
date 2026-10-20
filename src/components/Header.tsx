@@ -2,12 +2,7 @@ import React from 'react';
 import { 
   Calendar, 
   ListFilter, 
-  FileText, 
-  User,
-  Sun,
-  Moon,
-  Database,
-  Trash2
+  User 
 } from 'lucide-react';
 import { ManagerProfile } from '../types/overtime';
 import { COLOR_THEMES } from '../utils/theme';
@@ -18,13 +13,13 @@ export type ActiveTab = 'lancamentos' | 'calendario' | 'perfil';
 interface HeaderProps {
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
-  onOpenReportModal: () => void;
-  onOpenDataModal: () => void;
   onBackToSplash: () => void;
   profile: ManagerProfile;
-  onToggleTheme: () => void;
   cloudUser?: FirebaseUser | null;
   isCloudSyncing?: boolean;
+  onOpenReportModal?: () => void;
+  onOpenDataModal?: () => void;
+  onToggleTheme?: () => void;
   onOpenTrashModal?: () => void;
   trashCount?: number;
 }
@@ -32,15 +27,9 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
-  onOpenReportModal,
-  onOpenDataModal,
   onBackToSplash,
   profile,
-  onToggleTheme,
   cloudUser,
-  isCloudSyncing,
-  onOpenTrashModal,
-  trashCount = 0,
 }) => {
   const themeConfig = COLOR_THEMES[profile.primaryColor] || COLOR_THEMES.blue;
 
@@ -114,74 +103,34 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </nav>
 
-          {/* Right Action Buttons */}
+          {/* Right Action: Clean Perfil & Configurações shortcut */}
           <div className="flex items-center gap-2">
-            
-            {/* Indicador visual Sincronizado Online quando logado */}
-            {cloudUser && (
-              <button
-                type="button"
-                onClick={() => setActiveTab('perfil')}
-                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 shadow-2xs hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition cursor-pointer"
-                title={`Conectado como ${cloudUser.displayName || cloudUser.email || 'Usuário'} - Firestore Sincronizado Online`}
-              >
-                <span className={`w-2 h-2 rounded-full bg-emerald-500 ${isCloudSyncing ? 'animate-ping' : 'animate-pulse'}`} />
-                <span>{isCloudSyncing ? 'Sincronizando...' : 'Sincronizado Online'}</span>
-              </button>
-            )}
-
-            {/* Quick Dark/Light Mode Switch */}
             <button
-              onClick={onToggleTheme}
+              onClick={() => setActiveTab('perfil')}
               type="button"
-              className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-              title={profile.theme === 'dark' ? 'Alternar para Tema Claro' : 'Alternar para Tema Escuro'}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-2xl border transition cursor-pointer active:scale-95 ${
+                activeTab === 'perfil'
+                  ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 border-blue-200 dark:border-blue-900/60 font-bold shadow-xs'
+                  : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+              }`}
+              title="Acessar Perfil & Configurações"
             >
-              {profile.theme === 'dark' ? (
-                <Sun className="w-4 h-4 text-amber-400" />
-              ) : (
-                <Moon className="w-4 h-4 text-slate-600" />
-              )}
-            </button>
-
-            {/* Data options / backup */}
-            <button
-              onClick={onOpenDataModal}
-              type="button"
-              className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-              title="Backup e Dados"
-            >
-              <Database className="w-4 h-4" />
-            </button>
-
-            {/* Lixeira Local */}
-            {onOpenTrashModal && (
-              <button
-                onClick={onOpenTrashModal}
-                type="button"
-                className="relative p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                title={`Lixeira Local (${trashCount} itens)`}
-              >
-                <Trash2 className="w-4 h-4" />
-                {trashCount > 0 && (
-                  <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full text-[9px] font-black bg-rose-500 text-white shadow-xs">
-                    {trashCount}
-                  </span>
+              <div className="relative flex items-center justify-center">
+                {profile.avatarUrl ? (
+                  <img src={profile.avatarUrl} alt="Avatar" className="w-6 h-6 rounded-full object-cover" />
+                ) : (
+                  <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400">
+                    <User className="w-3.5 h-3.5" />
+                  </div>
                 )}
-              </button>
-            )}
-
-            {/* BOTÃO DESTACADO: Gerar Relatório (Semanal e Mensal) */}
-            <button
-              onClick={onOpenReportModal}
-              type="button"
-              className={`flex items-center gap-2 px-4 py-2 rounded-2xl font-black text-xs sm:text-sm shadow-md transition cursor-pointer active:scale-95 ${themeConfig.bgButton}`}
-              title="Gerar Relatório Semanal ou Mensal"
-            >
-              <FileText className="w-4 h-4" />
-              <span>Gerar Relatório</span>
+                {cloudUser && (
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900" />
+                )}
+              </div>
+              <span className="text-xs font-semibold hidden sm:inline max-w-[130px] truncate">
+                {profile.name || 'Configurações'}
+              </span>
             </button>
-
           </div>
 
         </div>
