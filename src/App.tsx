@@ -49,7 +49,7 @@ export default function App() {
   );
 
   const [isUnlocked, setIsUnlocked] = useState<boolean>(() => !isSecurityConfigured);
-  const [showSplash, setShowSplash] = useState<boolean>(true);
+  const [showSplash, setShowSplash] = useState<boolean>(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(() => isSecurityConfigured);
   const [isTrashModalOpen, setIsTrashModalOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('lancamentos');

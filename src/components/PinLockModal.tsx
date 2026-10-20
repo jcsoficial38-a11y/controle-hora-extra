@@ -4,16 +4,12 @@ import { COLOR_THEMES } from '../utils/theme';
 import { verifyNativeBiometrics } from '../utils/biometrics';
 import { 
   Lock, 
-  Delete, 
   Fingerprint, 
   X, 
   HelpCircle, 
-  ShieldCheck, 
   AlertCircle, 
-  Scan, 
   CheckCircle2, 
-  AlertTriangle,
-  RotateCcw
+  AlertTriangle
 } from 'lucide-react';
 
 interface PinLockModalProps {
@@ -38,19 +34,13 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
   const [showForgotModal, setShowForgotModal] = useState<boolean>(false);
   const [securityAnswerInput, setSecurityAnswerInput] = useState<string>('');
   const [forgotErrorMsg, setForgotErrorMsg] = useState<string>('');
-
-  // Estados para fluxo seguro da Biometria
-  const [showDisabledBiometricsAlert, setShowDisabledBiometricsAlert] = useState<boolean>(false);
-  const [showBiometricsModal, setShowBiometricsModal] = useState<boolean>(false);
-  const [biometricsStatus, setBiometricsStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
-  const [biometricErrorDetails, setBiometricErrorDetails] = useState<string>('');
+  const [isVerifyingBiometrics, setIsVerifyingBiometrics] = useState<boolean>(false);
 
   const themeConfig = COLOR_THEMES[profile.primaryColor] || COLOR_THEMES.blue;
   const hasAutoTriggeredRef = useRef<boolean>(false);
 
-  // 1. GATILHO AUTOMÁTICO DE BIOMETRIA AO ABRIR:
-  // Ao carregar a tela de bloqueio/PIN, se a biometria estiver cadastrada/ativada,
-  // invoque AUTOMATICAMENTE o leitor de digital do dispositivo/navegador assim que a tela for montada (via useEffect)
+  // GATILHO DIRETO DA BIOMETRIA NATIVA AO ABRIR (SEM TELAS INTERMEDIÁRIAS):
+  // Se a biometria estiver cadastrada e ativa, aciona diretamente o leitor nativo do dispositivo
   useEffect(() => {
     if (isOpen) {
       setPinInput('');
@@ -61,11 +51,12 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
         hasAutoTriggeredRef.current = true;
         const timer = setTimeout(() => {
           handleBiometricsClick();
-        }, 300);
+        }, 150);
         return () => clearTimeout(timer);
       }
     } else {
       hasAutoTriggeredRef.current = false;
+      setIsVerifyingBiometrics(false);
     }
   }, [isOpen, profile.biometricsEnabled, profile.biometricCredentialId]);
 
@@ -105,60 +96,32 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
     setErrorMsg('');
   };
 
-  // FLUXO ESTRITO DE SEGURANÇA DA BIOMETRIA
-  // 1. O clique no botão NÃO PODE abrir o app diretamente sob nenhuma hipótese.
-  // 2. Primeiro verifica se a biometria foi previamente cadastrada e ativada nas configurações.
-  // 3. Se NÃO estiver cadastrada/ativada: exibe aviso e NÃO aciona a criação na tela de bloqueio.
-  // 4. Se ESTIVER cadastrada: aciona APENAS a autenticação/verificação da chave já salva (get passkey / WebAuthn get).
-  // 5. O app SÓ é liberado se a leitura da digital for confirmada com SUCESSO.
-  const handleBiometricsClick = () => {
+  // ACIONA DIRETAMENTE O LEITOR NATIVO DO APARELHO (SEM TELAS/POPUPS INTERMEDIÁRIOS)
+  const handleBiometricsClick = async () => {
     const isRegistered = Boolean(profile.biometricsEnabled && profile.biometricCredentialId);
 
-    // Regra: Se o usuário ainda não tiver cadastrado a biometria previamente nas configurações:
     if (!isRegistered) {
-      const msg = 'Biometria não cadastrada. Acesse com seu PIN e ative nas configurações do app.';
-      setErrorMsg(msg);
-      setShowDisabledBiometricsAlert(true);
+      setErrorMsg('Biometria não cadastrada. Acesse com seu PIN e ative nas configurações.');
       return;
     }
 
-    // Se cadastrada, aciona APENAS a autenticação da chave salva (get passkey)
-    setErrorMsg('');
-    setShowBiometricsModal(true);
-    handlePerformBiometricScan();
-  };
+    if (isVerifyingBiometrics) return;
 
-  // Aciona obrigatoriamente a autenticação nativa da chave já existente (navigator.credentials.get)
-  const handlePerformBiometricScan = async () => {
-    setBiometricsStatus('scanning');
-    setBiometricErrorDetails('');
+    setErrorMsg('');
+    setIsVerifyingBiometrics(true);
 
     try {
       const result = await verifyNativeBiometrics(profile.biometricCredentialId);
-
-      // Regra 5: SÓ libera se a leitura for confirmada com SUCESSO
       if (result.success) {
-        setBiometricsStatus('success');
-        setTimeout(() => {
-          setShowBiometricsModal(false);
-          setBiometricsStatus('idle');
-          setBiometricErrorDetails('');
-          onSuccess();
-        }, 500);
+        setPinInput('');
+        onSuccess();
       } else {
-        setBiometricsStatus('error');
-        setBiometricErrorDetails(
-          result.error || 'Leitura cancelada ou não reconhecida pelo leitor biométrico.'
-        );
-        setErrorMsg('Leitura biométrica não concluída. O aplicativo permanece bloqueado.');
+        setErrorMsg(result.error || 'Leitura biométrica não reconhecida ou cancelada.');
       }
     } catch (err: any) {
-      // Qualquer exceção: MANTÉM BLOQUEADO!
-      setBiometricsStatus('error');
-      setBiometricErrorDetails(
-        err?.message || 'Falha na comunicação com o sensor biométrico do aparelho.'
-      );
-      setErrorMsg('Falha na autenticação biométrica. O aplicativo permanece bloqueado.');
+      setErrorMsg(err?.message || 'Falha na comunicação com o sensor biométrico.');
+    } finally {
+      setIsVerifyingBiometrics(false);
     }
   };
 
@@ -214,6 +177,7 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
         <button
           type="button"
           onClick={handleBiometricsClick}
+          disabled={isVerifyingBiometrics}
           className={`w-full py-2.5 px-3 mb-2 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold transition active:scale-95 cursor-pointer shadow-xs border ${
             profile.biometricsEnabled && profile.biometricCredentialId
               ? 'bg-blue-50/90 hover:bg-blue-100/90 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-300 border-blue-200 dark:border-blue-900/60'
@@ -225,9 +189,9 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
               : 'Biometria não cadastrada. Acesse com seu PIN e ative nas configurações do app.'
           }
         >
-          <Fingerprint className={`w-4 h-4 ${profile.biometricsEnabled && profile.biometricCredentialId ? 'text-blue-600 dark:text-blue-400 animate-pulse' : 'text-slate-400'}`} />
-          <span>Desbloquear com Biometria / Digital</span>
-          {profile.biometricsEnabled && profile.biometricCredentialId && (
+          <Fingerprint className={`w-4 h-4 ${isVerifyingBiometrics ? 'text-blue-600 dark:text-blue-400 animate-spin' : profile.biometricsEnabled && profile.biometricCredentialId ? 'text-blue-600 dark:text-blue-400 animate-pulse' : 'text-slate-400'}`} />
+          <span>{isVerifyingBiometrics ? 'Aguardando Leitor Biométrico...' : 'Desbloquear com Biometria / Digital'}</span>
+          {!isVerifyingBiometrics && profile.biometricsEnabled && profile.biometricCredentialId && (
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping ml-0.5" />
           )}
         </button>
@@ -315,148 +279,7 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
 
       </div>
 
-      {/* MODAL 1: AVISO ESTRITO QUANDO A BIOMETRIA NÃO ESTÁ ATIVADA NAS CONFIGURAÇÕES */}
-      {showDisabledBiometricsAlert && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 border-2 border-amber-300 dark:border-amber-700 shadow-2xl text-center relative space-y-4">
-            
-            {/* Warning Badge Icon */}
-            <div className="w-14 h-14 rounded-2xl bg-amber-100 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/60 flex items-center justify-center mx-auto text-amber-600 dark:text-amber-400">
-              <AlertTriangle className="w-7 h-7" />
-            </div>
 
-            <div>
-              <h4 className="text-base font-black text-slate-900 dark:text-white">
-                Biometria não cadastrada
-              </h4>
-              <p className="text-xs text-slate-700 dark:text-slate-200 mt-2 font-bold leading-relaxed bg-amber-50/80 dark:bg-amber-950/40 p-3 rounded-2xl border border-amber-200/80 dark:border-amber-900/60">
-                Cadastre a biometria nas configurações do app primeiro
-              </p>
-            </div>
-
-            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-500 dark:text-slate-400 text-left flex items-start gap-2.5">
-              <Fingerprint className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
-              <span>
-                Acesse o aplicativo utilizando o seu <strong>PIN de 4 dígitos</strong> e realize o cadastro único da biometria no <strong>Perfil do Gestor (Configurações)</strong>.
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowDisabledBiometricsAlert(false)}
-              className={`w-full py-3 rounded-xl text-xs font-bold text-white shadow-md cursor-pointer transition active:scale-95 ${themeConfig.bgButton}`}
-            >
-              Entendi, vou usar o PIN
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 2: TELA DE LEITURA BIOMÉTRICA NATIVA DO DISPOSITIVO */}
-      {showBiometricsModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fade-in">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl text-center relative space-y-5">
-            
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className={`w-5 h-5 ${themeConfig.textColor}`} />
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Validação Biométrica Nativa
-                </h4>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowBiometricsModal(false);
-                  setBiometricsStatus('idle');
-                  setBiometricErrorDetails('');
-                }}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Leitor Biométrico */}
-            <div className="py-3 flex flex-col items-center justify-center">
-              <div className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 ${
-                biometricsStatus === 'scanning'
-                  ? 'bg-blue-50 dark:bg-blue-950/60 ring-8 ring-blue-500/20'
-                  : biometricsStatus === 'success'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/60 ring-8 ring-emerald-500/20'
-                  : biometricsStatus === 'error'
-                  ? 'bg-rose-50 dark:bg-rose-950/60 ring-8 ring-rose-500/20'
-                  : 'bg-slate-100 dark:bg-slate-800'
-              }`}>
-                {biometricsStatus === 'success' ? (
-                  <CheckCircle2 className="w-12 h-12 text-emerald-500 animate-scale-up" />
-                ) : biometricsStatus === 'error' ? (
-                  <AlertCircle className="w-12 h-12 text-rose-500" />
-                ) : (
-                  <Fingerprint className={`w-12 h-12 transition-colors ${
-                    biometricsStatus === 'scanning' ? 'text-blue-600 dark:text-blue-400 animate-pulse' : 'text-slate-700 dark:text-slate-300'
-                  }`} />
-                )}
-
-                {/* Linha de Scanner Animada */}
-                {biometricsStatus === 'scanning' && (
-                  <div className="absolute inset-x-3 h-1 bg-gradient-to-r from-transparent via-blue-500 to-transparent rounded-full animate-bounce" />
-                )}
-              </div>
-
-              {/* Status / Feedback da Leitura */}
-              <div className="mt-4 px-2">
-                <p className="text-sm font-bold text-slate-800 dark:text-white">
-                  {biometricsStatus === 'scanning' && 'Solicitando leitor do celular...'}
-                  {biometricsStatus === 'success' && 'Biometria confirmada com sucesso!'}
-                  {biometricsStatus === 'error' && 'Leitura biométrica não validada'}
-                  {biometricsStatus === 'idle' && 'Aguardando ação...'}
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  {biometricsStatus === 'scanning' && 'Confirme sua digital ou Face ID na janela nativa do seu dispositivo.'}
-                  {biometricsStatus === 'success' && 'Liberando acesso com segurança...'}
-                  {biometricsStatus === 'error' && (biometricErrorDetails || 'A leitura falhou ou foi cancelada. O aplicativo permanece bloqueado.')}
-                  {biometricsStatus === 'idle' && 'Toque abaixo para acionar o leitor do aparelho.'}
-                </p>
-              </div>
-            </div>
-
-            {/* Ações */}
-            <div className="space-y-2 pt-1">
-              {biometricsStatus === 'error' && (
-                <button
-                  type="button"
-                  onClick={handlePerformBiometricScan}
-                  className={`w-full py-3 rounded-xl text-xs font-bold text-white shadow-md flex items-center justify-center gap-2 cursor-pointer transition active:scale-95 ${themeConfig.bgButton}`}
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  <span>Tentar Leitura Novamente</span>
-                </button>
-              )}
-
-              {biometricsStatus === 'scanning' && (
-                <div className="flex items-center justify-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400 py-2">
-                  <Scan className="w-4 h-4 animate-spin" />
-                  <span>Aguardando resposta do sensor nativo...</span>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  setShowBiometricsModal(false);
-                  setBiometricsStatus('idle');
-                  setBiometricErrorDetails('');
-                }}
-                className="w-full py-2.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-              >
-                Cancelar e Usar PIN
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* Forgot Password Modal (Biometria OU Pergunta de Segurança) */}
       {showForgotModal && (
