@@ -162,6 +162,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </button>
 
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('perfil');
+              onClose();
+            }}
+            className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white transition cursor-pointer"
+          >
+            <div className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-purple-600 dark:text-purple-400">
+              <Database className="w-4 h-4" />
+            </div>
+            <span>Backup & Dados Locais</span>
+          </button>
+
         </div>
 
         {/* Rodapé do Menu Lateral */}

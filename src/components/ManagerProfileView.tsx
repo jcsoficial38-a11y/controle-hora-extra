@@ -82,12 +82,12 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const backupFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Controle de Seções Expansíveis (Accordion) - Todas fechadas por padrão (Lixeira retrátil)
+  // Controle de Seções Expansíveis (Accordion) - Relatórios & Backup aberto por padrão para acesso imediato
   const [openSections, setOpenSections] = useState<Record<AccordionSection, boolean>>({
     pessoal: false,
     seguranca: false,
     lixeira: false,      // Lixeira retrátil (fechada por padrão)
-    relatorios: false,
+    relatorios: true,     // Card de Backup & Dados Locais visível em destaque por padrão
     aparencia: false,
   });
 
@@ -274,7 +274,7 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `backup_app_controle_he_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = 'backup_app.json';
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1081,7 +1081,7 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
                       type="file"
                       ref={backupFileInputRef}
                       onChange={handleImportBackupFile}
-                      accept=".json"
+                      accept=".json,application/json"
                       className="hidden"
                     />
 
