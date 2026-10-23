@@ -177,6 +177,11 @@ export async function verifyNativeBiometrics(
       };
     }
 
+    const challenge = new Uint8Array(32);
+    window.crypto.getRandomValues(challenge);
+
+    const rawId = base64ToBuffer(savedCredentialId);
+
     const hostname = window.location.hostname;
     const rpId = (hostname && hostname !== 'localhost' && !hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) ? hostname : undefined;
 

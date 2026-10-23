@@ -39,15 +39,25 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
   const themeConfig = COLOR_THEMES[profile.primaryColor] || COLOR_THEMES.blue;
   const hasAutoTriggeredRef = useRef<boolean>(false);
 
-  // Removido o auto-trigger: a biometria exige clique explícito no botão "Desbloquear com Biometria".
+  // Disparo automático do leitor biométrico ao abrir a tela de bloqueio
   useEffect(() => {
     if (isOpen) {
       setPinInput('');
       setErrorMsg('');
+
+      const isRegistered = Boolean(profile.biometricsEnabled && profile.biometricCredentialId);
+      if (isRegistered && !hasAutoTriggeredRef.current) {
+        hasAutoTriggeredRef.current = true;
+        const timer = setTimeout(() => {
+          handleBiometricsClick();
+        }, 150);
+        return () => clearTimeout(timer);
+      }
     } else {
+      hasAutoTriggeredRef.current = false;
       setIsVerifyingBiometrics(false);
     }
-  }, [isOpen]);
+  }, [isOpen, profile.biometricsEnabled, profile.biometricCredentialId]);
 
   if (!isOpen) return null;
 
@@ -85,16 +95,14 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
     setErrorMsg('');
   };
 
-  // EXIGE CLIQUE EXPLÍCITO NO BOTÃO ANTES DE INVOCAR A API NATIVA (WEBAUTHN)
+  // ACIONA OU REINICIA A LEITURA BIOMÉTRICA DO SISTEMA OPERACIONAL
   const handleBiometricsClick = async () => {
     const isRegistered = Boolean(profile.biometricsEnabled && profile.biometricCredentialId);
 
     if (!isRegistered) {
-      setErrorMsg('Biometria não cadastrada. Utilize o PIN de 4 dígitos.');
+      setErrorMsg('Biometria não cadastrada. Acesse com seu PIN e ative nas configurações.');
       return;
     }
-
-    if (isVerifyingBiometrics) return;
 
     setErrorMsg('');
     setIsVerifyingBiometrics(true);
@@ -103,21 +111,15 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
       const result = await verifyNativeBiometrics(profile.biometricCredentialId);
       if (result.success) {
         setPinInput('');
-        onSuccess();
-      } else {
-        // Tratamento suave de erro: se cancelado pelo usuário, não exibir erro agressivo,
-        // permitindo acesso instantâneo via PIN sem travamentos.
-        if (result.isCancelled) {
-          setErrorMsg('');
-        } else {
-          setErrorMsg(''); // Suprime mensagens agressivas para garantir fluidez no PIN
-        }
+        setIsVerifyingBiometrics(false);
+        onSuccess(); // Desbloqueio instantâneo!
+        return;
+      } else if (!result.isCancelled && result.error) {
+        setErrorMsg(result.error);
       }
     } catch (err: any) {
-      if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') {
-        setErrorMsg('');
-      } else {
-        setErrorMsg('');
+      if (err?.name !== 'NotAllowedError' && err?.name !== 'AbortError') {
+        setErrorMsg(err?.message || 'Falha na comunicação com o sensor biométrico.');
       }
     } finally {
       setIsVerifyingBiometrics(false);
@@ -176,7 +178,6 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
         <button
           type="button"
           onClick={handleBiometricsClick}
-          disabled={isVerifyingBiometrics}
           className={`w-full py-2.5 px-3 mb-2 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold transition active:scale-95 cursor-pointer shadow-xs border ${
             profile.biometricsEnabled && profile.biometricCredentialId
               ? 'bg-blue-50/90 hover:bg-blue-100/90 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-300 border-blue-200 dark:border-blue-900/60'
