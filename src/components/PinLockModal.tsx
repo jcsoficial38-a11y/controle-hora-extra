@@ -39,26 +39,15 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
   const themeConfig = COLOR_THEMES[profile.primaryColor] || COLOR_THEMES.blue;
   const hasAutoTriggeredRef = useRef<boolean>(false);
 
-  // GATILHO DIRETO DA BIOMETRIA NATIVA AO ABRIR (SEM TELAS INTERMEDIÁRIAS):
-  // Se a biometria estiver cadastrada e ativa, aciona diretamente o leitor nativo do dispositivo
+  // Removido o auto-trigger: a biometria exige clique explícito no botão "Desbloquear com Biometria".
   useEffect(() => {
     if (isOpen) {
       setPinInput('');
       setErrorMsg('');
-
-      const isRegistered = Boolean(profile.biometricsEnabled && profile.biometricCredentialId);
-      if (isRegistered && !hasAutoTriggeredRef.current) {
-        hasAutoTriggeredRef.current = true;
-        const timer = setTimeout(() => {
-          handleBiometricsClick();
-        }, 150);
-        return () => clearTimeout(timer);
-      }
     } else {
-      hasAutoTriggeredRef.current = false;
       setIsVerifyingBiometrics(false);
     }
-  }, [isOpen, profile.biometricsEnabled, profile.biometricCredentialId]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -96,12 +85,12 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
     setErrorMsg('');
   };
 
-  // ACIONA DIRETAMENTE O LEITOR NATIVO DO APARELHO (SEM TELAS/POPUPS INTERMEDIÁRIOS)
+  // EXIGE CLIQUE EXPLÍCITO NO BOTÃO ANTES DE INVOCAR A API NATIVA (WEBAUTHN)
   const handleBiometricsClick = async () => {
     const isRegistered = Boolean(profile.biometricsEnabled && profile.biometricCredentialId);
 
     if (!isRegistered) {
-      setErrorMsg('Biometria não cadastrada. Acesse com seu PIN e ative nas configurações.');
+      setErrorMsg('Biometria não cadastrada. Utilize o PIN de 4 dígitos.');
       return;
     }
 
@@ -116,10 +105,20 @@ export const PinLockModal: React.FC<PinLockModalProps> = ({
         setPinInput('');
         onSuccess();
       } else {
-        setErrorMsg(result.error || 'Leitura biométrica não reconhecida ou cancelada.');
+        // Tratamento suave de erro: se cancelado pelo usuário, não exibir erro agressivo,
+        // permitindo acesso instantâneo via PIN sem travamentos.
+        if (result.isCancelled) {
+          setErrorMsg('');
+        } else {
+          setErrorMsg(''); // Suprime mensagens agressivas para garantir fluidez no PIN
+        }
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Falha na comunicação com o sensor biométrico.');
+      if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') {
+        setErrorMsg('');
+      } else {
+        setErrorMsg('');
+      }
     } finally {
       setIsVerifyingBiometrics(false);
     }

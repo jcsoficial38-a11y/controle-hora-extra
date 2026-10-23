@@ -15,6 +15,7 @@ import {
 } from './utils/storage';
 import { SplashScreen } from './components/SplashScreen';
 import { Header, ActiveTab } from './components/Header';
+import { Sidebar } from './components/Sidebar';
 import { OvertimeList } from './components/OvertimeList';
 import { MonthlyCalendar } from './components/MonthlyCalendar';
 import { ManagerProfileView } from './components/ManagerProfileView';
@@ -25,17 +26,6 @@ import { PinLockModal } from './components/PinLockModal';
 import { TrashModal } from './components/TrashModal';
 import { Lock } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { 
-  auth, 
-  onAuthUserChanged, 
-  syncRecordsWithCloud, 
-  saveRecordToCloud, 
-  deleteRecordFromCloud, 
-  subscribeToCloudRecords,
-  loadProfileFromCloud,
-  saveProfileToCloud
-} from './services/firebase';
-import { User as FirebaseUser } from 'firebase/auth';
 
 export default function App() {
   const [records, setRecords] = useState<OvertimeRecord[]>(() => loadRecords());
@@ -52,7 +42,10 @@ export default function App() {
   const [showSplash, setShowSplash] = useState<boolean>(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(() => isSecurityConfigured);
   const [isTrashModalOpen, setIsTrashModalOpen] = useState<boolean>(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('lancamentos');
+  const [selectedEmployee, setSelectedEmployee] = useState<string>('todos');
+  const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState<boolean>(false);
 
   // Modal states
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
@@ -61,90 +54,7 @@ export default function App() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isDataModalOpen, setIsDataModalOpen] = useState(false);
 
-  // Estados de Autenticação e Sincronização em Nuvem (Firebase Firestore)
-  const [cloudUser, setCloudUser] = useState<FirebaseUser | null>(() => auth.currentUser);
-  const [isCloudSyncing, setIsCloudSyncing] = useState<boolean>(false);
-  const [lastCloudSyncTime, setLastCloudSyncTime] = useState<string | null>(() => {
-    return localStorage.getItem('controle_hora_extra_firebase_last_sync') || null;
-  });
-
-  // 2. Observador onAuthStateChanged no carregamento da página
-  // Verifica automaticamente se já existe um usuário logado e restaura dados sem sobrescrever perfil personalizado
-  useEffect(() => {
-    const unsubscribe = onAuthUserChanged(async (user) => {
-      setCloudUser(user);
-      if (user) {
-        console.log('[Firebase] Usuário autenticado na nuvem:', user.email);
-        setIsCloudSyncing(true);
-        try {
-          // Carrega perfil na nuvem com prioridade total para os dados do usuário
-          const cloudProf = await loadProfileFromCloud(user.uid);
-          if (cloudProf) {
-            setProfile(prev => {
-              const merged: ManagerProfile = {
-                ...prev,
-                name: prev.name && prev.name !== 'Gestor(a)' ? prev.name : (cloudProf.name || user.displayName || prev.name),
-                email: prev.email && prev.email !== 'gestor@empresa.com' ? prev.email : (cloudProf.email || user.email || prev.email),
-                avatarUrl: prev.avatarUrl || cloudProf.avatarUrl || user.photoURL || '',
-                company: prev.company || cloudProf.company || '',
-                roleTitle: prev.roleTitle || cloudProf.roleTitle || '',
-                theme: cloudProf.theme || prev.theme,
-                primaryColor: cloudProf.primaryColor || prev.primaryColor,
-              };
-              saveManagerProfile(merged);
-              return merged;
-            });
-          }
-
-          // Sincroniza lançamentos respeitando a lixeira local e exclusões
-          const currentRecords = loadRecords();
-          const syncRes = await syncRecordsWithCloud(user, currentRecords, profile);
-          if (syncRes.success) {
-            if (syncRes.mergedRecords && syncRes.mergedRecords.length > 0) {
-              setRecords(syncRes.mergedRecords);
-              saveRecords(syncRes.mergedRecords);
-            }
-            setLastCloudSyncTime(syncRes.lastSync);
-            localStorage.setItem('controle_hora_extra_firebase_last_sync', syncRes.lastSync);
-          }
-        } catch (error) {
-          console.error('[Firebase] Erro na auto-sincronização na inicialização:', error);
-        } finally {
-          setIsCloudSyncing(false);
-        }
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // 3. Listener em Tempo Real no Firestore (onSnapshot) vinculado ao UID do usuário logado
-  // Garante que todas as alterações na nuvem sejam refletidas imediatamente
-  useEffect(() => {
-    if (!cloudUser) return;
-
-    const unsubscribe = subscribeToCloudRecords(cloudUser.uid, (remoteRecords) => {
-      if (remoteRecords && remoteRecords.length > 0) {
-        setRecords(prev => {
-          const map = new Map<string, OvertimeRecord>();
-          prev.forEach(r => map.set(r.id, r));
-          remoteRecords.forEach(r => map.set(r.id, r));
-          const merged = Array.from(map.values()).sort(
-            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-          );
-          saveRecords(merged);
-          return merged;
-        });
-        const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        setLastCloudSyncTime(now);
-        localStorage.setItem('controle_hora_extra_firebase_last_sync', now);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [cloudUser]);
-
-  // Inicialização do Armazenamento Durável e Proteção Persistente contra perda de dados
+  // Inicialização do Armazenamento Durável e Proteção Persistente 100% Local
   useEffect(() => {
     initDurableStorage(
       (hydratedRecords) => {
@@ -155,7 +65,6 @@ export default function App() {
       }
     );
 
-    // Escuta eventos de storage entre abas para manter tudo sincronizado sem sobrescrita
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'controle_hora_extra_records_v1' && e.newValue) {
         try {
@@ -222,26 +131,12 @@ export default function App() {
     setProfile(prev => ({ ...prev, theme: newTheme }));
   };
 
-  // Sincronização em segundo plano no Firestore após mutações se o usuário estiver logado
-  const syncWithCloudIfLoggedIn = (updatedRecords: OvertimeRecord[]) => {
-    if (auth.currentUser) {
-      syncRecordsWithCloud(auth.currentUser, updatedRecords)
-        .then((res) => {
-          if (res.success) {
-            setLastCloudSyncTime(res.lastSync);
-            localStorage.setItem('controle_hora_extra_firebase_last_sync', res.lastSync);
-          }
-        })
-        .catch((e) => console.warn('[Firebase] Falha na auto-sincronização em segundo plano:', e));
-    }
-  };
-
   // CRUD actions
   const handleSaveRecord = (record: OvertimeRecord) => {
     setRecords(prev => {
       const exists = prev.some(r => r.id === record.id);
       const updated = exists ? prev.map(r => r.id === record.id ? record : r) : [record, ...prev];
-      syncWithCloudIfLoggedIn(updated);
+      saveRecords(updated);
       return updated;
     });
 
@@ -256,7 +151,7 @@ export default function App() {
     }
   };
 
-  // Exclusão com envio imediato para a Lixeira Local e remoção no Firestore
+  // Exclusão com envio imediato para a Lixeira Local
   const handleDeleteRecord = (id: string) => {
     const toDelete = records.find(r => r.id === id);
     if (toDelete) {
@@ -266,12 +161,8 @@ export default function App() {
     setRecords(prev => {
       const updated = prev.filter(r => r.id !== id);
       saveRecords(updated);
-      syncWithCloudIfLoggedIn(updated);
       return updated;
     });
-    if (cloudUser) {
-      deleteRecordFromCloud(cloudUser.uid, id).catch((e) => console.warn('[Firebase] Erro ao deletar no Firestore:', e));
-    }
   };
 
   // Gerenciamento da Lixeira Local (Restauração e Esvaziamento)
@@ -282,21 +173,14 @@ export default function App() {
       setRecords(prev => {
         const updated = [restored, ...prev.filter(r => r.id !== recordId)];
         saveRecords(updated);
-        syncWithCloudIfLoggedIn(updated);
         return updated;
       });
-      if (cloudUser) {
-        saveRecordToCloud(cloudUser.uid, restored);
-      }
     }
   };
 
   const handleDeletePermanentlyFromTrash = (recordId: string) => {
     const remainingTrash = deletePermanentlyFromTrash(recordId);
     setTrashRecords(remainingTrash);
-    if (cloudUser) {
-      deleteRecordFromCloud(cloudUser.uid, recordId);
-    }
   };
 
   const handleEmptyAllTrash = () => {
@@ -313,7 +197,7 @@ export default function App() {
         }
         return r;
       });
-      syncWithCloudIfLoggedIn(updated);
+      saveRecords(updated);
       return updated;
     });
   };
@@ -333,14 +217,14 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
       
-      {/* 1. TELA INICIAL (SPLASH SCREEN / ABERTURA COM RELÓGIO DIGITAL E HE ANTES DA HORA) */}
+      {/* 1. TELA INICIAL (SPLASH SCREEN) */}
       {showSplash ? (
         <SplashScreen
           onEnter={handleEnterFromSplash}
           profile={profile}
         />
       ) : !isUnlocked ? (
-        /* Tela de Bloqueio Obrigatório quando a Splash é fechada sem passar pela autenticação */
+        /* Tela de Bloqueio Obrigatório */
         <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-6 animate-fade-in">
           <div className="text-center space-y-4 max-w-sm bg-slate-800/80 p-8 rounded-3xl border border-slate-700 shadow-2xl">
             <div className="w-16 h-16 mx-auto rounded-3xl bg-blue-600/20 text-blue-400 flex items-center justify-center border border-blue-500/30">
@@ -361,19 +245,33 @@ export default function App() {
       ) : (
         /* MAIN APPLICATION VIEW */
         <div className="flex-1 flex flex-col">
-          {/* Top Application Header (Sem botões duplicados ou ícones inativos) */}
+          {/* Top Application Header (Clean without top-right profile avatar) */}
           <Header
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             onBackToSplash={() => setShowSplash(true)}
+            onOpenSidebar={() => setIsSidebarOpen(true)}
+            onAddRecord={() => handleOpenNewRecordModal()}
+            onOpenEmployeeFilter={() => setIsEmployeeModalOpen(true)}
+            selectedEmployee={selectedEmployee}
             profile={profile}
-            cloudUser={cloudUser}
+            trashCount={trashRecords.length}
+          />
+
+          {/* New Modern Sidebar (Drawer) */}
+          <Sidebar
+            isOpen={isSidebarOpen}
+            onClose={() => setIsSidebarOpen(false)}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            profile={profile}
+            trashCount={trashRecords.length}
           />
 
           {/* Main Content Area */}
           <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
             
-            {/* 2. ABA DE CADASTRO E LANÇAMENTOS (ÁREA / TABELA ÚNICA SEM DUPLICIDADES) */}
+            {/* 2. ABA DE CADASTRO E LANÇAMENTOS */}
             {activeTab === 'lancamentos' && (
               <OvertimeList
                 records={records}
@@ -384,10 +282,14 @@ export default function App() {
                 onOpenExportModal={() => setIsExportModalOpen(true)}
                 knownEmployees={knownEmployees}
                 profile={profile}
+                selectedEmployee={selectedEmployee}
+                setSelectedEmployee={setSelectedEmployee}
+                isEmployeeModalOpen={isEmployeeModalOpen}
+                setIsEmployeeModalOpen={setIsEmployeeModalOpen}
               />
             )}
 
-            {/* 3. ABA CALENDÁRIO MENSAL (VISÃO DE CALENDÁRIO) */}
+            {/* 3. ABA CALENDÁRIO MENSAL */}
             {activeTab === 'calendario' && (
               <MonthlyCalendar
                 records={records}
@@ -401,16 +303,13 @@ export default function App() {
               />
             )}
 
-            {/* 4. ABA PERFIL DO GESTOR & SEGURANÇA (MENU EXPANSÍVEL / ACCORDION) */}
+            {/* 4. ABA PERFIL & CONFIGURAÇÕES (Com Lixeira Retrátil e Backup de Dados) */}
             {activeTab === 'perfil' && (
               <ManagerProfileView
                 profile={profile}
                 onUpdateProfile={(updated) => setProfile(updated)}
                 records={records}
                 onRecordsUpdated={(updated) => setRecords(updated)}
-                cloudUser={cloudUser}
-                isCloudSyncing={isCloudSyncing}
-                lastCloudSync={lastCloudSyncTime}
                 trashRecords={trashRecords}
                 onRestoreFromTrash={handleRestoreFromTrash}
                 onDeletePermanentlyFromTrash={handleDeletePermanentlyFromTrash}
@@ -429,21 +328,16 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-blue-600 dark:text-blue-400">Controle de Hora Extra (HE)</span>
                 <span>•</span>
-                <span>PWA • Gestor: {profile.name || 'Ativo'}</span>
+                <span>100% Local • Gestor: {profile.name || 'Ativo'}</span>
               </div>
               <div className="flex items-center gap-4">
                 <button
-                  onClick={() => setIsTrashModalOpen(true)}
-                  className="hover:text-rose-600 dark:hover:text-rose-400 transition cursor-pointer"
-                  title="Visualizar itens excluídos"
-                >
-                  Lixeira ({trashRecords.length})
-                </button>
-                <button
-                  onClick={() => setIsDataModalOpen(true)}
+                  onClick={() => {
+                    setActiveTab('perfil');
+                  }}
                   className="hover:text-blue-600 dark:hover:text-blue-400 transition cursor-pointer"
                 >
-                  Backup & Dados
+                  Configurações & Backup
                 </button>
                 <button
                   onClick={() => setIsExportModalOpen(true)}
@@ -463,7 +357,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: Bloqueio por PIN de 4 Dígitos & Biometria (Com Esqueci Minha Senha) */}
+      {/* MODAL: Bloqueio por PIN & Biometria */}
       <PinLockModal
         isOpen={isPinModalOpen}
         onClose={() => {
@@ -486,16 +380,6 @@ export default function App() {
         }}
       />
 
-      {/* MODAL: Lixeira Local */}
-      <TrashModal
-        isOpen={isTrashModalOpen}
-        onClose={() => setIsTrashModalOpen(false)}
-        trashRecords={trashRecords}
-        onRestore={handleRestoreFromTrash}
-        onDeletePermanently={handleDeletePermanentlyFromTrash}
-        onEmptyTrash={handleEmptyAllTrash}
-      />
-
       {/* MODAL: Formulário de Lançamento */}
       <OvertimeFormModal
         isOpen={isFormModalOpen}
@@ -507,7 +391,7 @@ export default function App() {
         profile={profile}
       />
 
-      {/* MODAL: Gerador de Relatório (Semanal e Mensal) com PDF e WhatsApp */}
+      {/* MODAL: Gerador de Relatório */}
       <ExportModal
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}

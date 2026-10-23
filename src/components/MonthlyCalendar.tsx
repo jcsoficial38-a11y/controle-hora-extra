@@ -239,14 +239,6 @@ export const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
             <FileDown className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             <span>PDF do Mês</span>
           </button>
-
-          <button
-            onClick={() => onOpenExportModal('whatsapp')}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 text-emerald-800 dark:text-emerald-300 text-xs font-bold transition cursor-pointer active:scale-95"
-          >
-            <Share2 className="w-4 h-4 text-emerald-600" />
-            <span>WhatsApp</span>
-          </button>
         </div>
 
       </div>

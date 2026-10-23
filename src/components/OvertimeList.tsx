@@ -9,10 +9,13 @@ import {
   Edit3, 
   CheckCircle2, 
   XCircle, 
-  Calendar as CalendarIcon, 
+  ChevronLeft,
+  ChevronRight,
   Plus, 
   ArrowUpDown, 
-  Clock 
+  Clock,
+  User,
+  X
 } from 'lucide-react';
 
 interface OvertimeListProps {
@@ -24,6 +27,10 @@ interface OvertimeListProps {
   onOpenExportModal?: (defaultType?: 'pdf' | 'whatsapp') => void;
   knownEmployees: string[];
   profile: ManagerProfile;
+  selectedEmployee: string;
+  setSelectedEmployee: (emp: string) => void;
+  isEmployeeModalOpen: boolean;
+  setIsEmployeeModalOpen: (open: boolean) => void;
 }
 
 export const OvertimeList: React.FC<OvertimeListProps> = ({
@@ -34,11 +41,14 @@ export const OvertimeList: React.FC<OvertimeListProps> = ({
   onToggleStatus,
   knownEmployees,
   profile,
+  selectedEmployee,
+  setSelectedEmployee,
+  isEmployeeModalOpen,
+  setIsEmployeeModalOpen,
 }) => {
   const currentDate = new Date();
   const [selectedMonth, setSelectedMonth] = useState<number>(currentDate.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(currentDate.getFullYear());
-  const [selectedEmployee, setSelectedEmployee] = useState<string>('todos');
   const [selectedStatus, setSelectedStatus] = useState<'todos' | 'pendente' | 'pago'>('todos');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -61,9 +71,24 @@ export const OvertimeList: React.FC<OvertimeListProps> = ({
     { value: 12, label: 'Dezembro' },
   ];
 
-  const years = [2024, 2025, 2026, 2027];
+  const prevMonth = () => {
+    if (selectedMonth === 1) {
+      setSelectedMonth(12);
+      setSelectedYear(selectedYear - 1);
+    } else {
+      setSelectedMonth(selectedMonth - 1);
+    }
+  };
 
-  // Map to calculate employee total accumulated balance across all records
+  const nextMonth = () => {
+    if (selectedMonth === 12) {
+      setSelectedMonth(1);
+      setSelectedYear(selectedYear + 1);
+    } else {
+      setSelectedMonth(selectedMonth + 1);
+    }
+  };
+
   const employeeBalances = useMemo(() => {
     const balances = new Map<string, { total: number; pending: number; paid: number }>();
     records.forEach((r) => {
@@ -76,7 +101,6 @@ export const OvertimeList: React.FC<OvertimeListProps> = ({
     return balances;
   }, [records]);
 
-  // Filtering records
   const filteredRecords = useMemo(() => {
     return records
       .filter((rec) => {
@@ -106,95 +130,85 @@ export const OvertimeList: React.FC<OvertimeListProps> = ({
   }, [records, selectedMonth, selectedYear, selectedEmployee, selectedStatus, searchQuery, sortOrder]);
 
   return (
-    <div className="space-y-4 animate-fade-in">
+    <div className="space-y-4 animate-fade-in pb-16">
       
-      {/* Barra Única e Limpa de Filtros */}
-      <div className="bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+      {/* Container de Filtros e Organização em Sequência Vertical Exata */}
+      <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs space-y-3">
         
-        {/* Campo de Busca Rápida */}
-        <div className="relative flex-1 max-w-md">
+        {/* 1º: Linha de Status (Chips Seletores) [ Todos | Pendente | Pago ] */}
+        <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 w-full sm:w-auto">
+            {(['todos', 'pendente', 'pago'] as const).map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setSelectedStatus(st)}
+                className={`flex-1 sm:flex-initial px-5 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer capitalize ${
+                  selectedStatus === st
+                    ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {st === 'todos' ? 'Todos' : st === 'pendente' ? 'Pendente' : 'Pago'}
+              </button>
+            ))}
+          </div>
+
+          {selectedEmployee !== 'todos' && (
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold">
+              <span>Filtrado por: {selectedEmployee}</span>
+              <button
+                type="button"
+                onClick={() => setSelectedEmployee('todos')}
+                className="hover:text-rose-600 cursor-pointer"
+                title="Limpar filtro de funcionário"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* 2º: Seletor de Mês e Ano [ < Outubro 2026 > ] (Centralizado) */}
+        <div className="flex items-center justify-center py-1">
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs">
+            <button
+              type="button"
+              onClick={prevMonth}
+              className="p-1 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition cursor-pointer"
+              title="Mês anterior"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-xs sm:text-sm font-black text-slate-900 dark:text-white px-4 min-w-[150px] text-center tracking-tight">
+              {months.find(m => m.value === selectedMonth)?.label} {selectedYear}
+            </span>
+            <button
+              type="button"
+              onClick={nextMonth}
+              className="p-1 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 transition cursor-pointer"
+              title="Próximo mês"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* 3º: Barra de Pesquisa [ 🔍 Buscar por colaborador, motivo ou data... ] */}
+        <div className="relative pt-1">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Buscar por colaborador, motivo ou data..."
-            className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/80 text-xs sm:text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none transition"
+            className="w-full pl-10 pr-3 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/80 text-xs sm:text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none transition shadow-2xs"
           />
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
-        </div>
-
-        {/* Filtros em linha e botão principal */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Mês */}
-          <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
-            <CalendarIcon className="w-3.5 h-3.5 text-slate-500" />
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
-            >
-              <option value={0}>Todos os Meses</option>
-              {months.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Ano */}
-          <div className="bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
-            >
-              <option value={0}>Todos os Anos</option>
-              {years.map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Funcionário */}
-          <div className="bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
-            <select
-              value={selectedEmployee}
-              onChange={(e) => setSelectedEmployee(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer max-w-[130px] truncate"
-            >
-              <option value="todos">Todos Funcionários</option>
-              {knownEmployees.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Status */}
-          <div className="bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value as any)}
-              className="bg-transparent text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
-            >
-              <option value="todos">Status: Todos</option>
-              <option value="pendente">Status: Pendente</option>
-              <option value="pago">Status: Pago</option>
-            </select>
-          </div>
-
-          {/* Botão de Adicionar Lançamento */}
-          <button
-            type="button"
-            onClick={onAddRecord}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold text-xs shadow-md transition cursor-pointer active:scale-95 ${themeConfig.bgButton}`}
-          >
-            <Plus className="w-4 h-4" />
-            <span>Lançar HE</span>
-          </button>
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-4 pointer-events-none" />
         </div>
 
       </div>
 
-      {/* ÁREA / TABELA ÚNICA DE LANÇAMENTOS COM: Data, Nome do Funcionário, Horas Extras, Status e Saldo */}
+      {/* 4º: Área de Lista (Inicia imediatamente abaixo da barra de pesquisa) */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -241,12 +255,10 @@ export const OvertimeList: React.FC<OvertimeListProps> = ({
                       key={rec.id}
                       className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
                     >
-                      {/* 1. Data (DD/MM/AAAA) */}
                       <td className="py-3.5 px-4 font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                         {formatDateBr(rec.date)}
                       </td>
 
-                      {/* 2. Nome do Funcionário */}
                       <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white whitespace-nowrap">
                         <div className="flex items-center gap-2.5">
                           <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs text-white ${themeConfig.bgButton}`}>
@@ -263,14 +275,12 @@ export const OvertimeList: React.FC<OvertimeListProps> = ({
                         </div>
                       </td>
 
-                      {/* 3. Horas Extras (ex: 08 hs, 04 hs, 12 hs) */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
                         <span className={`inline-flex items-center justify-center px-3 py-1 rounded-xl font-extrabold text-xs border ${themeConfig.badgeStyle}`}>
                           {formatHours(rec.hours)}
                         </span>
                       </td>
 
-                      {/* 4. Status (Pendente / Pago com badges coloridos e legíveis) */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
                         <button
                           type="button"
@@ -296,7 +306,6 @@ export const OvertimeList: React.FC<OvertimeListProps> = ({
                         </button>
                       </td>
 
-                      {/* 5. Saldo (Saldo Acumulado do Funcionário) */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
                         <div className="inline-flex flex-col items-center">
                           <span className="font-extrabold text-slate-900 dark:text-white text-xs">
@@ -308,7 +317,6 @@ export const OvertimeList: React.FC<OvertimeListProps> = ({
                         </div>
                       </td>
 
-                      {/* 6. Ações (Editar e Lixeira funcional com confirmação in-app) */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1">
                           <button
@@ -320,7 +328,6 @@ export const OvertimeList: React.FC<OvertimeListProps> = ({
                             <Edit3 className="w-4 h-4" />
                           </button>
                           
-                          {/* Ícone da Lixeira funcional com Confirmação e Exclusão imediata */}
                           <button
                             type="button"
                             onClick={(e) => {
@@ -344,7 +351,7 @@ export const OvertimeList: React.FC<OvertimeListProps> = ({
           </table>
         </div>
 
-        {/* Rodapé da tabela com contagem total de registros */}
+        {/* Rodapé da tabela */}
         <div className="px-5 py-3.5 bg-slate-50/80 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
           <span>
             Mostrando <strong>{filteredRecords.length}</strong> de <strong>{records.length}</strong> lançamentos
@@ -355,6 +362,78 @@ export const OvertimeList: React.FC<OvertimeListProps> = ({
         </div>
 
       </div>
+
+      {/* Modal de Filtro por Funcionário (Aberto pelo ícone ⋮ / Filter no Header) */}
+      {isEmployeeModalOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400">
+                  <User className="w-5 h-5" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Filtrar por Funcionário
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEmployeeModalOpen(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedEmployee('todos');
+                  setIsEmployeeModalOpen(false);
+                }}
+                className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition cursor-pointer ${
+                  selectedEmployee === 'todos'
+                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800'
+                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span>👤 Todos os Funcionários</span>
+                {selectedEmployee === 'todos' && <CheckCircle2 className="w-4 h-4" />}
+              </button>
+
+              {knownEmployees.map((name) => (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => {
+                    setSelectedEmployee(name);
+                    setIsEmployeeModalOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-bold transition cursor-pointer ${
+                    selectedEmployee === name
+                      ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800'
+                      : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="truncate">{name}</span>
+                  {selectedEmployee === name && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                </button>
+              ))}
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsEmployeeModalOpen(false)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold text-white shadow-xs cursor-pointer ${themeConfig.bgButton}`}
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Confirmação de Exclusão in-app */}
       <ConfirmDeleteModal
