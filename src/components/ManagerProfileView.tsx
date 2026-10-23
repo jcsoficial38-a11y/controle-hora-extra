@@ -309,9 +309,12 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
   const handleResetTotal = () => {
     if (confirm('ATENÇÃO: Tem certeza absoluta de que deseja realizar o RESET TOTAL? Todos os registros, configurações, senha e lixeira serão apagados permanentemente do aparelho.')) {
       localStorage.clear();
+      localStorage.setItem('controle_hora_extra_initialized_flag', 'true');
+      localStorage.setItem('controle_hora_extra_records_v1', JSON.stringify([]));
       if (window.indexedDB) {
         window.indexedDB.deleteDatabase('ControleHoraExtraDB');
       }
+      if (onRecordsUpdated) onRecordsUpdated([]);
       alert('Aplicativo resetado com sucesso.');
       window.location.reload();
     }

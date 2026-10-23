@@ -83,13 +83,18 @@ export async function registerNativeBiometrics(userName?: string): Promise<Biome
       .replace(/[^a-z0-9_-]/g, '_')
       .slice(0, 30);
 
+    const hostname = window.location.hostname;
+    const rpEntity: PublicKeyCredentialRpEntity = {
+      name: 'Controle de Hora Extra (HE)',
+    };
+    if (hostname && hostname !== 'localhost' && !hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+      rpEntity.id = hostname;
+    }
+
     const credential = await navigator.credentials.create({
       publicKey: {
         challenge,
-        rp: {
-          name: 'Controle de Hora Extra (HE)',
-          id: window.location.hostname || undefined,
-        },
+        rp: rpEntity,
         user: {
           id: userId,
           name: formattedUser || 'gestor_he',
@@ -172,16 +177,14 @@ export async function verifyNativeBiometrics(
       };
     }
 
-    const challenge = new Uint8Array(32);
-    window.crypto.getRandomValues(challenge);
-
-    const rawId = base64ToBuffer(savedCredentialId);
+    const hostname = window.location.hostname;
+    const rpId = (hostname && hostname !== 'localhost' && !hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) ? hostname : undefined;
 
     // Chamada ESTRITA de AUTENTICAÇÃO (get passkey / get credential)
     const assertion = await navigator.credentials.get({
       publicKey: {
         challenge,
-        rpId: window.location.hostname || undefined,
+        rpId,
         userVerification: 'required',
         timeout: 60000,
         allowCredentials: [
