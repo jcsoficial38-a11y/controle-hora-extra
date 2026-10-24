@@ -10,7 +10,8 @@ import {
   saveManagerProfile, 
   saveTrashRecords,
   loadRecords,
-  loadTrashRecords
+  loadTrashRecords,
+  downloadBackupJson
 } from '../utils/storage';
 import { 
   User, 
@@ -263,20 +264,7 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
 
   // 5. Sistema de Backup & Restauração via Arquivo JSON
   const handleExportBackup = () => {
-    const backupData = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      profile: profile,
-      records: records,
-      trash: trashRecords,
-    };
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'backup_app.json';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBackupJson(records, profile, trashRecords);
   };
 
   const handleImportBackupFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1051,7 +1039,7 @@ export const ManagerProfileView: React.FC<ManagerProfileViewProps> = ({
                           Exportar Backup
                         </h5>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-                          Baixa instantaneamente o arquivo backup_app.json.
+                          Baixa arquivo backup_app_YYYY-MM-DD.json com data e hora.
                         </p>
                       </div>
                     </button>

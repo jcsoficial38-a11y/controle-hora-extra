@@ -90,18 +90,17 @@ export const DataManagementModal: React.FC<DataManagementModalProps> = ({
   const handleResetWithSafetyBackup = () => {
     if (
       confirm(
-        'Atenção: Deseja realmente carregar os dados de demonstração? Uma cópia de segurança dos seus registros atuais será salva automaticamente antes da alteração.'
+        'Atenção: Deseja realmente zerar todos os lançamentos? Uma cópia de segurança dos seus registros atuais será salva automaticamente antes da exclusão.'
       )
     ) {
       // 1. Cria cópia de segurança antes do reset para garantir que nada seja perdido
       createSafetyPreResetBackup(records);
 
-      // 2. Carrega os dados de exemplo
-      const initial = getInitialSeedData();
-      onResetRecords(initial);
+      // 2. Zera a lista para 100% vazio (0 registros)
+      onResetRecords([]);
 
       setVaultInfo(getBackupVaultInfo());
-      setSuccessMessage('Dados de exemplo carregados! Sua cópia de segurança foi salva no cofre.');
+      setSuccessMessage('Lançamentos zerados com sucesso! Sua cópia de segurança foi salva no cofre.');
       setTimeout(() => setSuccessMessage(''), 4000);
     }
   };
@@ -269,7 +268,7 @@ export const DataManagementModal: React.FC<DataManagementModalProps> = ({
               </button>
             )}
 
-            {/* Restaurar Padrão com Aviso de Segurança */}
+            {/* Zerar Lançamentos com Aviso de Segurança */}
             <button
               type="button"
               onClick={handleResetWithSafetyBackup}
@@ -280,9 +279,9 @@ export const DataManagementModal: React.FC<DataManagementModalProps> = ({
                   <RotateCcw className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="font-bold text-xs">Carregar Dados de Demonstração</div>
+                  <div className="font-bold text-xs">Zerar Todos os Lançamentos</div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Salva cópia de segurança automática antes de carregar
+                    Limpa a lista para 0 registros (salva cópia de segurança no cofre)
                   </div>
                 </div>
               </div>

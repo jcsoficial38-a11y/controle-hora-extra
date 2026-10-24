@@ -11,7 +11,8 @@ import {
   restoreFromTrash,
   deletePermanentlyFromTrash,
   emptyTrash,
-  TrashRecord
+  TrashRecord,
+  downloadBackupJson
 } from './utils/storage';
 import { SplashScreen } from './components/SplashScreen';
 import { Header, ActiveTab } from './components/Header';
@@ -24,7 +25,7 @@ import { ExportModal } from './components/ExportModal';
 import { DataManagementModal } from './components/DataManagementModal';
 import { PinLockModal } from './components/PinLockModal';
 import { TrashModal } from './components/TrashModal';
-import { Lock } from 'lucide-react';
+import { Lock, CheckCircle2, X } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 export default function App() {
@@ -53,6 +54,16 @@ export default function App() {
   const [defaultDateForForm, setDefaultDateForForm] = useState<string | undefined>();
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isDataModalOpen, setIsDataModalOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Download automático de backup com nome inteligente (data e hora) e toast notification
+  const handleQuickSaveBackup = () => {
+    downloadBackupJson(records, profile, trashRecords);
+    setToastMessage('Dados salvos com sucesso no seu celular!');
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
+  };
 
   // Inicialização do Armazenamento Durável e Proteção Persistente 100% Local
   useEffect(() => {
@@ -252,6 +263,7 @@ export default function App() {
             onBackToSplash={() => setShowSplash(true)}
             onOpenSidebar={() => setIsSidebarOpen(true)}
             onAddRecord={() => handleOpenNewRecordModal()}
+            onSaveData={handleQuickSaveBackup}
             onOpenEmployeeFilter={() => setIsEmployeeModalOpen(true)}
             selectedEmployee={selectedEmployee}
             profile={profile}
@@ -414,6 +426,30 @@ export default function App() {
           setIsDataModalOpen(false);
         }}
       />
+
+      {/* AVISO RÁPIDO NA TELA (TOAST NOTIFICATION) */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-60 animate-fade-in max-w-sm w-full px-4 pointer-events-auto">
+          <div className="bg-slate-900/95 dark:bg-white/95 text-white dark:text-slate-900 px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700/80 dark:border-slate-200/80 flex items-center justify-between gap-3 backdrop-blur-md">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 dark:text-emerald-600 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <span className="text-xs sm:text-sm font-bold tracking-tight truncate">
+                {toastMessage}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToastMessage(null)}
+              className="text-slate-400 hover:text-white dark:hover:text-slate-900 cursor-pointer p-1 rounded-lg"
+              title="Fechar aviso"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );

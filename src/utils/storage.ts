@@ -243,150 +243,52 @@ export async function loadProfileFromIndexedDB(): Promise<ManagerProfile | null>
   });
 }
 
-// Gerador de dados de exemplo (usado EXCLUSIVAMENTE na primeiríssima instalação limpa)
+// Estado inicial 100% vazio (sem qualquer dado fictício de demonstração)
 export function getInitialSeedData(): OvertimeRecord[] {
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
-  
-  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const prevYear = prevMonthDate.getFullYear();
-  const prevMonth = String(prevMonthDate.getMonth() + 1).padStart(2, '0');
+  return [];
+}
 
-  return [
-    {
-      id: 'he-seed-1',
-      date: `${currentYear}-${currentMonth}-02`,
-      employeeName: 'Carlos Oliveira',
-      hours: 4,
-      status: 'pago',
-      reason: 'Fechamento de inventário quinzenal',
-      overtimeType: '50%',
-      ratePerHour: 35,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'he-seed-2',
-      date: `${currentYear}-${currentMonth}-05`,
-      employeeName: 'Mariana Santos',
-      hours: 8,
-      status: 'pendente',
-      reason: 'Plantão de suporte aos servidores',
-      overtimeType: '100%',
-      ratePerHour: 42,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'he-seed-3',
-      date: `${currentYear}-${currentMonth}-08`,
-      employeeName: 'Rafael Costa',
-      hours: 4,
-      status: 'pago',
-      reason: 'Atendimento emergencial de cliente',
-      overtimeType: '50%',
-      ratePerHour: 30,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'he-seed-4',
-      date: `${currentYear}-${currentMonth}-10`,
-      employeeName: 'Juliana Mendes',
-      hours: 6,
-      status: 'pendente',
-      reason: 'Finalização de relatório fiscal',
-      overtimeType: '50%',
-      ratePerHour: 38,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'he-seed-5',
-      date: `${currentYear}-${currentMonth}-12`,
-      employeeName: 'Carlos Oliveira',
-      hours: 8,
-      status: 'pendente',
-      reason: 'Manutenção preventiva de máquinas',
-      overtimeType: '100%',
-      ratePerHour: 35,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'he-seed-6',
-      date: `${currentYear}-${currentMonth}-15`,
-      employeeName: 'Lucas Souza',
-      hours: 12,
-      status: 'pago',
-      reason: 'Plantão escala 12x36 especial',
-      overtimeType: '100%',
-      ratePerHour: 28,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'he-seed-7',
-      date: `${currentYear}-${currentMonth}-18`,
-      employeeName: 'Mariana Santos',
-      hours: 4,
-      status: 'pago',
-      reason: 'Treinamento de novos estagiários',
-      overtimeType: '50%',
-      ratePerHour: 42,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'he-seed-8',
-      date: `${currentYear}-${currentMonth}-20`,
-      employeeName: 'Rafael Costa',
-      hours: 8,
-      status: 'pendente',
-      reason: 'Operação de entrega e carga',
-      overtimeType: '100%',
-      ratePerHour: 30,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'he-seed-9',
-      date: `${currentYear}-${currentMonth}-22`,
-      employeeName: 'Juliana Mendes',
-      hours: 4,
-      status: 'pendente',
-      reason: 'Auditoria interna da qualidade',
-      overtimeType: '50%',
-      ratePerHour: 38,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'he-seed-10',
-      date: `${currentYear}-${currentMonth}-25`,
-      employeeName: 'Lucas Souza',
-      hours: 8,
-      status: 'pago',
-      reason: 'Troca de turno fim de semana',
-      overtimeType: '100%',
-      ratePerHour: 28,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'he-seed-11',
-      date: `${prevYear}-${prevMonth}-14`,
-      employeeName: 'Carlos Oliveira',
-      hours: 6,
-      status: 'pago',
-      reason: 'Fechamento mensal',
-      overtimeType: '50%',
-      ratePerHour: 35,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: 'he-seed-12',
-      date: `${prevYear}-${prevMonth}-20`,
-      employeeName: 'Mariana Santos',
-      hours: 8,
-      status: 'pago',
-      reason: 'Implantação de novo software',
-      overtimeType: '100%',
-      ratePerHour: 42,
-      createdAt: new Date().toISOString()
-    }
-  ];
+/**
+ * Gera nome de arquivo inteligente para backup contendo data e hora para evitar duplicatas ou conflitos com (1).json
+ * Exemplo: backup_app_2026-10-23_23h25m10s.json
+ */
+export function generateBackupFileName(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  return `backup_app_${year}-${month}-${day}_${hours}h${minutes}m${seconds}s.json`;
+}
+
+/**
+ * Faz o download automático do arquivo de backup no formato .json
+ */
+export function downloadBackupJson(
+  records: OvertimeRecord[],
+  profile: ManagerProfile,
+  trash: TrashRecord[] = []
+): string {
+  const fileName = generateBackupFileName();
+  const backupData = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    profile,
+    records,
+    trash,
+  };
+  const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return fileName;
 }
 
 /**
@@ -462,17 +364,9 @@ export function loadRecords(): OvertimeRecord[] {
       return recovered;
     }
 
-    // 3. Se o app já foi inicializado anteriormente pelo usuário, NÃO recarrega seed data!
-    // Mantém o estado real do usuário (ex: se ele tinha limpado os dados para começar do zero)
-    if (isAppInitialized) {
-      return [];
-    }
-
-    // 4. PRIMEIRA EXECUÇÃO LIMPA (Virgem): Inicializa com exemplos de demonstração e marca inicializado
-    const initial = getInitialSeedData();
-    saveRecords(initial);
+    // 3. Primeira execução limpa ou após reset: inicia 100% VAZIO (0 registros, sem dados fictícios)
     localStorage.setItem(APP_INITIALIZED_KEY, 'true');
-    return initial;
+    return [];
   } catch (err) {
     console.error('[Storage] Erro grave ao carregar registros:', err);
     // Em caso de falha de segurança, tenta recuperar backup do cofre

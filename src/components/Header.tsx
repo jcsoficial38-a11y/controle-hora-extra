@@ -3,7 +3,8 @@ import {
   Menu,
   MoreVertical,
   Filter,
-  Plus
+  Plus,
+  Save
 } from 'lucide-react';
 import { ManagerProfile } from '../types/overtime';
 import { COLOR_THEMES } from '../utils/theme';
@@ -16,6 +17,7 @@ interface HeaderProps {
   onBackToSplash: () => void;
   onOpenSidebar: () => void;
   onAddRecord?: () => void;
+  onSaveData?: () => void;
   onOpenEmployeeFilter?: () => void;
   selectedEmployee?: string;
   profile: ManagerProfile;
@@ -26,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   onBackToSplash,
   onOpenSidebar,
   onAddRecord,
+  onSaveData,
   onOpenEmployeeFilter,
   selectedEmployee,
   profile,
@@ -84,6 +87,19 @@ export const Header: React.FC<HeaderProps> = ({
                 {hasActiveEmployeeFilter && (
                   <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-blue-600 ring-2 ring-white dark:ring-slate-900" />
                 )}
+              </button>
+            )}
+
+            {onSaveData && (
+              <button
+                type="button"
+                onClick={onSaveData}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl font-bold text-xs sm:text-sm text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 shadow-xs transition cursor-pointer active:scale-95 shrink-0"
+                title="Salvar dados e baixar backup com data e hora"
+              >
+                <Save className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="hidden sm:inline">Salvar Dados</span>
+                <span className="sm:hidden">Salvar</span>
               </button>
             )}
 
